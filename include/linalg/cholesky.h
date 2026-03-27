@@ -1,34 +1,45 @@
 #include "sparse_matrix.h"
 
 class CholeskyTree {
-}
-
-class SparseCholeskySolver {
-    public:
-        SparseCholeskySolver();
-        CSRMatrix getFactor();
-        void initialize(const CSRMatrix& A);
-        solve(double *__restrict x, double *__restrict b);  
-}
+};
 
 class SparseCholeskyOrdering {
     public:
         SparseCholeskyOrdering();
         void order();    // Still to be figured out...
-}
-
-class SparseCholeskyFactorization {
-    public:
-        SparseCholeskyFactorization(const CSRMatrix& A, const CSRPattern& LPattern);
-        CSRMatrix factorize();
-}
+};
 
 class SparseCholeskySymbolic {
+    private:
+        CSRMatrix* A;
     public:
-        SparseCholeskySymbolic(const CSRMatrix& A);
+        SparseCholeskySymbolic(CSRMatrix* A);
         CholeskyTree buildTree();
-        CSRPattern buildPatternL();
-        CSRPattern buildPatternL_T();  // eventually buildPatternL and buildPatternL_T will be unified in buildPattern
-}
+        CSRPattern* buildPatternL();
+        CSRPattern* buildPatternL_T();  // eventually buildPatternL and buildPatternL_T will be unified in buildPattern
+};
         
-        
+class SparseCholeskyFactorization {
+    private:
+        CSRMatrix* A;
+        CSRPattern* patternL;
+    public:
+        SparseCholeskyFactorization(CSRMatrix* A);
+        void setPatternL(CSRPattern* patternL);
+        CSRMatrix* factorize();
+};
+
+class SparseCholeskySolver {
+    private:
+        CSRMatrix* factor;
+        SparseCholeskyOrdering ordering;
+        SparseCholeskySymbolic symbolic;
+        SparseCholeskyFactorization factorization;
+
+    public:
+        SparseCholeskySolver(CSRMatrix* A);
+        CSRMatrix* getFactor();
+        void initialize(CSRMatrix* A);
+        void solve(double *__restrict x, double *__restrict b);  
+        ~SparseCholeskySolver();
+};
