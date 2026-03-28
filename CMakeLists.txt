@@ -115,6 +115,17 @@ target_link_libraries(test_NS PRIVATE nanofem nanoviewer tiny_expr)
 ###############################################################################
 
 ###############################################################################
+add_executable(test_cholesky
+	src/common/logging.cpp
+	src/bin/test_cholesky.cpp
+)
+target_compile_options(test_cholesky PRIVATE 
+	-std=c++17 -Wall -Wextra -Wno-missing-field-initializers
+)
+target_link_libraries(test_cholesky PRIVATE nanofem nanoviewer tiny_expr) 
+###############################################################################
+
+###############################################################################
 #add_executable(test_ordering
 #	src/common/logging.cpp
 #	src/common/chrono.cpp

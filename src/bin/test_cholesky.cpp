@@ -1,4 +1,4 @@
-#include <stdio>
+#include <iostream>
 #include "cholesky.h"
 
 int main() {
@@ -39,8 +39,8 @@ int main() {
     CSRMatrix A;
     A.symmetric = patternA.symmetric;
     A.nnz = patternA.nnz;
-    A.row_start = patternA.row_start.data();
-    A.col = patternA.col.data();
+    A.row_start = patternA.row_start.data;
+    A.col = patternA.col.data;
     A.data.push_back(1); A.data.push_back(1); A.data.push_back(1);
     A.data.push_back(1); A.data.push_back(1); A.data.push_back(1);
     A.data.push_back(1); A.data.push_back(1); A.data.push_back(1);
@@ -54,18 +54,28 @@ int main() {
     expectedPatternL.cols = 8;
     expectedPatternL.nnz = (8 + 8) + 5;  // elements of A + fill in
 
-    expectedPatternL.row_start.push_back(0);  patternL.row_start.push_back(1);    patternA.row_start.push_back(2);
-    expectedPatternL.row_start.push_back(3);  patternL.row_start.push_back(6);    patternA.row_start.push_back(10);
-    expectedPatternL.row_start.push_back(13); patternL.row_start.push_back(14);   patternA.row_start.push_back(21);
+    expectedPatternL.row_start.push_back(0);  expectedPatternL.row_start.push_back(1);    expectedPatternL.row_start.push_back(2);
+    expectedPatternL.row_start.push_back(3);  expectedPatternL.row_start.push_back(6);    expectedPatternL.row_start.push_back(10);
+    expectedPatternL.row_start.push_back(13); expectedPatternL.row_start.push_back(14);   expectedPatternL.row_start.push_back(21);
 
-    expectedPatternL.col.push_back(0); patternL.col.push_back(1); patternL.col.push_back(2); // row 0,1,2
-    expectedPatternL.col.push_back(1); patternL.col.push_back(2); patternL.col.push_back(3); // row 3
-    expectedPatternL.col.push_back(0); patternL.col.push_back(1); patternL.col.push_back(3); patternA.col.push_back(4); //row 4
-    expectedPatternL.col.push_back(0); patternL.col.push_back(4); patternL.col.push_back(5); // row 5
+    expectedPatternL.col.push_back(0); expectedPatternL.col.push_back(1); expectedPatternL.col.push_back(2); // row 0,1,2
+    expectedPatternL.col.push_back(1); expectedPatternL.col.push_back(2); expectedPatternL.col.push_back(3); // row 3
+    expectedPatternL.col.push_back(0); expectedPatternL.col.push_back(1); expectedPatternL.col.push_back(3); patternA.col.push_back(4); //row 4
+    expectedPatternL.col.push_back(0); expectedPatternL.col.push_back(4); expectedPatternL.col.push_back(5); // row 5
     expectedPatternL.col.push_back(6); // row 6
-    expectedPatternL.col.push_back(1); patternL.col.push_back(2); patternL.col.push_back(3);
-    expectedPatternL.col.push_back(4); patternL.col.push_back(5); patternL.col.push_back(6);
+    expectedPatternL.col.push_back(1); expectedPatternL.col.push_back(2); expectedPatternL.col.push_back(3);
+    expectedPatternL.col.push_back(4); expectedPatternL.col.push_back(5); expectedPatternL.col.push_back(6);
     expectedPatternL.col.push_back(7); // row 7
 
-    SparseCholeskySolver solver(A);
+    CSRMatrix expectedL;
+    expectedL.symmetric = expectedPatternL.symmetric;
+    expectedL.nnz = expectedPatternL.nnz;
+    expectedL.row_start = expectedPatternL.row_start.data;
+    expectedL.col = expectedPatternL.col.data;
+    //expectedL.data.push_back(...);
+    // still need to do the factorization by hand
+    // TODO: hardcode in python the matrix and check if it is spd and compute its cholesky factor
+
+    SparseCholeskySolver solver(&A);
+
 }
