@@ -29,7 +29,7 @@ add_library(nanofem
 	#        before building the project.
 	solutions/src/fem/P1.cpp
 	src/fem/poisson.cpp
-	src/fem/navier_stokes.cpp
+	solutions/src/fem/navier_stokes.cpp
 	solutions/src/linalg/conjugate_gradient.cpp
 	src/matrix/fem_matrix.cpp
 	solutions/src/matrix/sparse_matrix.cpp
@@ -46,6 +46,7 @@ add_library(nanofem
 	src/linalg/cholesky_ordering.cpp
 	src/linalg/cholesky_symbolic.cpp
 	src/linalg/cholesky_factorization.cpp
+	src/linalg/cholesky_tree.cpp
 )
 target_include_directories(nanofem PUBLIC 
 	include/common 

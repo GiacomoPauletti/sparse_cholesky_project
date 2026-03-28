@@ -1,19 +1,33 @@
 #include "cholesky.h"
 
 SparseCholeskySymbolic::SparseCholeskySymbolic(CSRMatrix* A) 
-    : A{A}
 {
+    this->A = A;
 }
-CholeskyTree SparseCholeskySymbolic::buildTree() {
-    // TODO
-    return CholeskyTree();
+const CholeskyTree& SparseCholeskySymbolic::buildTree() {
+    this->isTreeBuilt = true;
+
+    this->tree = CholeskyTree(A->rows);
+
+    std::vector<int> ancestor(A->rows);
+    // Build cholesky tree
+
+    // end of tree construction
+
+    return this->tree;
 }
 CSRPattern* SparseCholeskySymbolic::buildPatternL() {
-    // TODO
+    if ( !this->isTreeBuilt ) {
+        this->buildTree();
+    }
+
     return new CSRPattern();
 }
 // eventually buildPatternL and buildPatternL_T will be unified in buildPattern
 CSRPattern* SparseCholeskySymbolic::buildPatternL_T() {
-    // TODO
+    if ( !this->isTreeBuilt ) {
+        this->buildTree();
+    }
+
     return new CSRPattern();
 }

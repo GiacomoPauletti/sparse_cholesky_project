@@ -135,8 +135,8 @@ int main(int argc, char **argv)
 	LOG_MSG("Viewer initialized.");
 
 	/* Prepare GPU data */
-	const char *vert_shader = "./shaders/fem.vert";
-	const char *frag_shader = "./shaders/fem.frag";
+	const char *vert_shader = "../shaders/fem.vert";
+	const char *frag_shader = "../shaders/fem.frag";
 	int shader = create_shader(vert_shader, frag_shader);
 	if (!shader) {
 		exit(EXIT_FAILURE);

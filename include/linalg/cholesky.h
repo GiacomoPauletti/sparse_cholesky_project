@@ -1,6 +1,15 @@
+#include <vector>
+
 #include "sparse_matrix.h"
 
 class CholeskyTree {
+    public:
+        CholeskyTree();
+        CholeskyTree(int num_nodes);
+        int& operator[](int index);
+        int& parent(int index);
+    private:
+        std::vector<int> parentship;
 };
 
 class SparseCholeskyOrdering {
@@ -12,9 +21,11 @@ class SparseCholeskyOrdering {
 class SparseCholeskySymbolic {
     private:
         CSRMatrix* A;
+        CholeskyTree tree;
+        bool isTreeBuilt = false;
     public:
         SparseCholeskySymbolic(CSRMatrix* A);
-        CholeskyTree buildTree();
+        const CholeskyTree& buildTree();
         CSRPattern* buildPatternL();
         CSRPattern* buildPatternL_T();  // eventually buildPatternL and buildPatternL_T will be unified in buildPattern
 };
