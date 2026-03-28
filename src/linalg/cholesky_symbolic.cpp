@@ -1,4 +1,5 @@
 #include "cholesky.h"
+#include <iostream>
 
 SparseCholeskySymbolic::SparseCholeskySymbolic(CSRMatrix* A) 
 {
