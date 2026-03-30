@@ -13,5 +13,5 @@ void SparseCholeskyFactorization::setPatternL(CSRPattern* patternL) {
 
 CSRMatrix* SparseCholeskyFactorization::factorize() {
     // Implement (sequential) factorization here
-    return new CSRMatrix();
+    return nullptr;
 }

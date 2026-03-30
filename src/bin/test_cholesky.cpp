@@ -2,57 +2,111 @@
 #include "cholesky.h"
 
 bool check_pattern(CSRPattern* got, CSRPattern* expected) {
-    bool result = true; 
-    result &= (got->symmetric == expected->symmetric);
-    result &= (got->rows == expected->rows);
-    result &= (got->cols == expected->cols);
-    result &= (got->nnz == expected->nnz);
+    if ( got == nullptr ) {
+        std::cout << "Pattern is nullptr" << std::endl;
+        return false;
+    }
+    if (got->symmetric != expected->symmetric) {
+        std::cout << "Pattern symmetry. Expected: " << expected->symmetric << "; got: " << got->symmetric << std::endl,
+        return false;
+    }
+    if (got->rows != expected->rows) {
+        std::cout << "Pattern rows. Expected: " << expected->rows << "; got: " << got->rows << std::endl,
+        return false;
+    }
+    if (got->cols != expected->cols) {
+        std::cout << "Pattern cols. Expected: " << expected->cols << "; got: " << got->cols << std::endl,
+        return false;
+    }
+    if (got->nnz != expected->nnz) {
+        std::cout << "Pattern nnz. Expected: " << expected->nnz << "; got: " << got->nnz << std::endl,
+        return false;
+    }
 
-    result &= (got->row_start.size == expected->row_start.size);
+    if (got->row_start.size != expected->row_start.size) {
+        std::cout << "Pattern row_start.size. Expected: " << expected->row_start.size << "; got: " << got->row_start.size << std::endl,
+        return false;
+    }
     for ( int i=0; i<got->row_start.size; i++ ) {
-        result &= (got->row_start[i] == expected->row_start[i]);
+        if (got->row_start[i] != expected->row_start[i]) {
+            std::cout << "Pattern row_start["<< i <<"]. Expected: " << expected->row_start[i] << "; got: " << got->row_start[i] << std::endl,
+            return false;
+        }
     }
 
-    result &= (got->col.size == expected->col.size);
+    if (got->col.size != expected->col.size) {
+        std::cout << "Pattern cols.size. Expected: " << expected->cols.size << "; got: " << got->cols.size << std::endl,
+        return false;
+    }
     for ( int i=0; i<got->col.size; i++ ) {
-        result &= (got->col[i] == expected->col[i]);
+        if (got->col[i] != expected->col[i]) {
+            std::cout << "Pattern col["<< i <<"]. Expected: " << expected->col[i] << "; got: " << got->col[i] << std::endl,
+            return false;
+        }
     }
 
-    return result;
+    return true;
 }
 
 // TODO: add tolerance
 bool check_matrix(CSRMatrix* got, CSRMatrix* expected) {
-    bool result = true; 
-    result &= (got->symmetric == expected->symmetric);
-    result &= (got->rows == expected->rows);
-    result &= (got->cols == expected->cols);
-    result &= (got->nnz == expected->nnz);
+    if ( got == nullptr ) {
+        std::cout << "Matrix is nullptr" << std::endl;
+        return false;
+    }
+    if (got->symmetric != expected->symmetric) {
+        std::cout << "Matrix symmetry. Expected: " << expected->symmetric << "; got: " << got->symmetric << std::endl,
+        return false;
+    }
+    if (got->rows != expected->rows) {
+        std::cout << "Matrix rows. Expected: " << expected->rows << "; got: " << got->rows << std::endl,
+        return false;
+    }
+    if (got->cols != expected->cols) {
+        std::cout << "Matrix cols. Expected: " << expected->cols << "; got: " << got->cols << std::endl,
+        return false;
+    }
+    if (got->nnz != expected->nnz) {
+        std::cout << "Matrix nnz. Expected: " << expected->nnz << "; got: " << got->nnz << std::endl,
+        return false;
+    }
 
     for ( int i=0; i<got->rows+1; i++ ) {
-        result &= (got->row_start[i] == expected->row_start[i]);
+        if (got->row_start[i] != expected->row_start[i]) {
+            std::cout << "Matrix row_start["<< i <<"]. Expected: " << expected->row_start[i] << "; got: " << got->row_start[i] << std::endl,
+            return false;
+        }
     }
 
     for ( int i=0; i<got->nnz; i++ ) {
-        result &= (got->col[i] == expected->col[i]);
+        if (got->col[i] != expected->col[i]) {
+            std::cout << "Matrix col["<< i <<"]. Expected: " << expected->col[i] << "; got: " << got->col[i] << std::endl,
+            return false;
+        }
     }
 
     for ( int i=0; i<got->nnz; i++ ) {
-        result &= (got->data[i] == expected->data[i]);
+        if (got->data[i] != expected->data[i]) {
+            std::cout << "Matrix data["<< i <<"]. Expected: " << expected->data[i] << "; got: " << got->data[i] << std::endl,
+            return false;
+        }
     }
 
-    return result;
+    return true;
 }
 
 // TODO: add tolerance
 bool check_solution(TArray<double> got, TArray<double> expected) {
-    bool result = true; 
-    result &= (got.size == expected.size);
+    if (got.size != expected.size) {
+        std::cout << "Solution size. Expected: " << expected->size << "; got: " << got->size << std::endl,
+        return false;
+    }
     for ( int i=0; i<got.size; i++ ) {
-        result &= (got[i] == expected[i]);
+        std::cout << "Solution["<< i <<"]. Expected: " << expected[i] << "; got: " << got[i] << std::endl,
+        return false;
     }
 
-    return result;
+    return false;
 }
 
 int main() {
@@ -140,9 +194,33 @@ int main() {
     b.push_back(1); b.push_back(1); b.push_back(1); b.push_back(1);
     b.push_back(1); b.push_back(1); b.push_back(1); b.push_back(1);
 
-    SparseCholeskySolver solver(&A);
-    solver.initialize(&A);
-    // check_matrix(solver.getFactor(), patternExpectedL);
-    solver.solve(x.data, b.data);
-    // check_solution(x, expectedX);
+    SparseCholeskyOrdering ordering;
+    SparseCholeskySymbolic symbolic(&A);
+    SparseCholeskyFactorization factorization(&A);
+
+    // solver.initialize(&A) is equivalent to the following code
+    // 1. Ordering phase
+    ordering.order();
+
+    // 2. Symbolic phase
+    CSRPattern* patternL = symbolic.buildPatternL();
+    if (check_pattern(patternL, &expectedPatternL) == false) {
+        return false;
+    }
+    CSRPattern* patternL_T = symbolic.buildPatternL_T();
+
+    // 3. Factorization phase
+    factorization.setPatternL(patternL);
+    CSRMatrix* factor = factorization.factorize();
+    if (check_matrix(factor, &expectedL) == false) {
+        return false;
+    }
+
+    // solver.solve(x,b) is equivalent to the following code
+    // ...
+    if (check_solution(x, expectedSol) == false) {
+        return false;
+    }
+
+    std::cout << "All tests passed" << std::endl;
 }

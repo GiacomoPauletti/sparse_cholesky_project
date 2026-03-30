@@ -22,7 +22,7 @@ CSRPattern* SparseCholeskySymbolic::buildPatternL() {
         this->buildTree();
     }
 
-    return new CSRPattern();
+    return nullptr;
 }
 // eventually buildPatternL and buildPatternL_T will be unified in buildPattern
 CSRPattern* SparseCholeskySymbolic::buildPatternL_T() {
@@ -30,5 +30,5 @@ CSRPattern* SparseCholeskySymbolic::buildPatternL_T() {
         this->buildTree();
     }
 
-    return new CSRPattern();
+    return nullptr;
 }
