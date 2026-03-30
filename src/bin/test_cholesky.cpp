@@ -323,48 +323,48 @@ int main() {
     
 
     // solver.initialize(&A) is equivalent to the following code
-    // ==================== 2. ORDERING PHASE TESTING =======================
+    std::cout << "==================== 2. ORDERING PHASE TESTING =======================" << std::endl;
     ordering.order();
 
-    // ==================== 3. SYMBOLIC PHASE TESTING =======================
+    std::cout << "==================== 3. SYMBOLIC PHASE TESTING =======================" << std::endl;
     CSRPattern* patternL = symbolic.buildPatternL();
     if (check_pattern(patternL, &expectedPatternL) == false) {
-        std::cout << "Failed Symbolic (L) test" << std::endl;
+        std::cout << ">>> OUTCOME: Failed Symbolic (L) test" << std::endl;
         patternL = &expectedPatternL;
     } else {
-        std::cout << "Succeded Symbolic (L) test" << std::endl;
+        std::cout << ">>> OUTCOME: Succeded Symbolic (L) test" << std::endl;
     }
     CSRPattern* patternL_T = symbolic.buildPatternL_T();
     if (check_pattern(patternL_T, &expectedPatternL_T) == false) {
-        std::cout << "Failed Symbolic (L^T) test" << std::endl;
+        std::cout << ">>> OUTCOME: Failed Symbolic (L^T) test" << std::endl;
         patternL = &expectedPatternL;
     } else {
-        std::cout << "Succeded Symbolic (L_T) test" << std::endl;
+        std::cout << ">>> OUTCOME: Succeded Symbolic (L_T) test" << std::endl;
     }
 
-    // ==================== 4. FACTORIZATION PHASE TESTING =======================
+    std::cout << "==================== 4. FACTORIZATION PHASE TESTING =======================" << std::endl;
     // 3. Factorization phase
     factorization.setPatternL(patternL);
     CSRMatrix* factor = factorization.factorize();
     if (check_matrix(factor, &expectedL) == false) {
-        std::cout << "Failed Factorization test" << std::endl;
+        std::cout << ">>> OUTCOME: Failed Factorization test" << std::endl;
         factor = &expectedL;
     } else {
-        std::cout << "Succeded Factorization test" << std::endl;
+        std::cout << ">>> OUTCOME: Succeded Factorization test" << std::endl;
     }
 
     // TODO: obtain factor_T (that is, L transposed) given factor
     // ...
 
-    // ==================== 4. SOLVE PHASE TESTING =======================
+    std::cout << "==================== 4. SOLVE PHASE TESTING =======================" << std::endl;
     // solver.solve(x,b) is equivalent to the following code
     // TODO: implement resolution of LL^T*x = b
 
     if (check_solution(&x, &expectedX) == false) {
-        std::cout << "Failed Solution test" << std::endl;
+        std::cout << ">>> OUTCOME: Failed Solution test" << std::endl;
         return 1;
     } else {
-        std::cout << "Succeded Solution test" << std::endl;
+        std::cout << ">>> OUTCOME: Succeded Solution test" << std::endl;
     }
 
     return 0;
