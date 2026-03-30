@@ -1,4 +1,6 @@
 #include <iostream>
+#include <iomanip>
+#include <cmath>
 #include "cholesky.h"
 
 bool check_pattern(CSRPattern* got, CSRPattern* expected) {
@@ -48,8 +50,7 @@ bool check_pattern(CSRPattern* got, CSRPattern* expected) {
     return true;
 }
 
-// TODO: add tolerance
-bool check_matrix(CSRMatrix* got, CSRMatrix* expected) {
+bool check_matrix(CSRMatrix* got, CSRMatrix* expected, double tol=1e-5) {
     if ( got == nullptr ) {
         std::cout << "Matrix is nullptr" << std::endl;
         return false;
@@ -86,7 +87,7 @@ bool check_matrix(CSRMatrix* got, CSRMatrix* expected) {
     }
 
     for ( int i=0; i<got->nnz; i++ ) {
-        if (got->data[i] != expected->data[i]) {
+        if (std::abs(got->data[i] != expected->data[i]) > tol) {
             std::cout << "Matrix data["<< i <<"]. Expected: " << expected->data[i] << "; got: " << got->data[i] << std::endl;
             return false;
         }
@@ -94,16 +95,22 @@ bool check_matrix(CSRMatrix* got, CSRMatrix* expected) {
 
     return true;
 }
+ 
+template<int d> 
+std::ostream& fixed(std::ostream& os){
+    os.setf(std::ios_base::fixed, std::ios_base::floatfield); 
+    os.precision(d); 
+    return os; 
+}
 
-// TODO: add tolerance
-bool check_solution(TArray<double>* got, TArray<double>* expected) {
+bool check_solution(TArray<double>* got, TArray<double>* expected, double tol=1e-5) {
     if (got->size != expected->size) {
         std::cout << "Solution size. Expected: " << expected->size << "; got: " << got->size << std::endl;
         return false;
     }
     for ( int i=0; i<got->size; i++ ) {
-        if ((*got)[i] != (*expected)[i]) {
-            std::cout << "Solution["<< i <<"]. Expected: " << (*expected)[i] << "; got: " << (*got)[i] << std::endl;
+        if (std::abs((*got)[i] - (*expected)[i]) > tol) {
+            std::cout << fixed<10> << "Solution["<< i <<"]. Expected: " << (*expected)[i] << "; got: " << (*got)[i] << std::endl;
             return false;
         }
     }
@@ -262,30 +269,23 @@ int main() {
     expectedPatternL_T.col.push_back(6); expectedPatternL_T.col.push_back(7); // row 6
     expectedPatternL_T.col.push_back(7); // row 7
 
-    // TODO: finish expectedL_T
     CSRMatrix expectedL_T;
-    // expectedL_T.symmetric = expectedPatternL.symmetric;
-    // expectedL_T.rows = expectedPatternL.rows;
-    // expectedL_T.cols = expectedPatternL.cols;
-    // expectedL_T.nnz = expectedPatternL.nnz;
-    // expectedL_T.row_start = expectedPatternL.row_start.data;
-    // expectedL_T.col = expectedPatternL.col.data;
-    // expectedL_T.data.push_back(3.16227766); // row 0
-    // expectedL_T.data.push_back(3.16227766); // row 1
-    // expectedL_T.data.push_back(3.16227766); // row 2
-    // expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(3.13049517e+00); // row 3
-    // expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(-3.19438282e-02);
-    //  expectedL_T.data.push_back(3.13033219e+00); // row 4
-    // expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(-3.19454914e-02); expectedL_T.data.push_back(3.14626437e+00); // row 5
-    // expectedL_T.data.push_back(3.16227766e+00); // row 6
-             
-    // expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(-6.38876565e-02); // row 5
-    // expectedL_T.data.push_back(-3.25974402e-02); expectedL_T.data.push_back(-3.30977033e-04); expectedL_T.data.push_back(3.16227766e-01); // row 5
-    // expectedL_T.data.push_back(3.11365632e+00);
+    expectedL_T.symmetric = expectedPatternL_T.symmetric;
+    expectedL_T.rows = expectedPatternL_T.rows;
+    expectedL_T.cols = expectedPatternL_T.cols;
+    expectedL_T.nnz = expectedPatternL_T.nnz;
+    expectedL_T.row_start = expectedPatternL_T.row_start.data;
+    expectedL_T.col = expectedPatternL_T.col.data;
+    expectedL_T.data.push_back(3.16227766); expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(3.16227766e-01);// row 0
+    expectedL_T.data.push_back(3.16227766e+00); expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(3.16227766e-01);// row 1
+    expectedL_T.data.push_back(3.16227766e+00); expectedL_T.data.push_back(3.16227766e-01); expectedL_T.data.push_back(3.16227766e-01); // row 2
+    expectedL_T.data.push_back(3.13049517e+00); expectedL_T.data.push_back(-3.19438282e-02); expectedL_T.data.push_back(-6.38876565e-02); // row 3
+    expectedL_T.data.push_back(3.13033219e+00); expectedL_T.data.push_back(-3.19454914e-02); expectedL_T.data.push_back(-3.25974402e-02); // row 4
+    expectedL_T.data.push_back(3.14626437e+00); expectedL_T.data.push_back(-3.30977033e-04); // row 5
+    expectedL_T.data.push_back(3.16227766e+00); expectedL_T.data.push_back(3.16227766e-01); // row 6
+    expectedL_T.data.push_back(3.11365632e+00); // row 7
 
-    // TODO: find expected solution "expectedX"
-
-    TArray<double> x(8), expectedX(8);
+    TArray<double> x(8), expectedX(0);
     expectedX.push_back(0.08240513); expectedX.push_back(0.0757028); expectedX.push_back(0.08412173);
     expectedX.push_back(0.08401755); expectedX.push_back(0.08418921); expectedX.push_back(0.09175949); 
     expectedX.push_back(0.09252348); expectedX.push_back(0.0747652);
@@ -305,6 +305,8 @@ int main() {
         std::cout << "Ax=b does not hold. Not going further. Check that you filled"
             "A and patternA correctly" << std::endl;
         return 1;
+    } else {
+        std::cout << "Ax=b holds." << std::endl;
     }
 
     // checking that LL^T*x=b holds
@@ -315,7 +317,10 @@ int main() {
         std::cout << "LL^T*x=b does not hold. Not going further. Check that you filled"
             "expectedL, expectedL_T and their patterns correctly" << std::endl;
         return 1;
+    } else {
+        std::cout << "LL^T*x=b holds." << std::endl;
     }
+    
 
     // solver.initialize(&A) is equivalent to the following code
     // ==================== 2. ORDERING PHASE TESTING =======================
