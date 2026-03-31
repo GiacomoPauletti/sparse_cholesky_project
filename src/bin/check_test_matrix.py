@@ -3,15 +3,16 @@ import numpy as np
 """ 
 === Hardcode of values in A
 
-row/col 0  1  2  3  4  5  6  7 
-0     | 1           1  1       |
-1     |    1     1  1          |
-2     |       1  1           1 | 
-3     |    1  1  1             |
-4     | 1  1        1          |
-5     | 1              1       |
-6     |                   1  1 | 
-7     |    1  1           1  1 |
+row/col  0  1  2  3  4  5  6  7 
+0     | 10           1  1       |
+1     |    10     1  1          |
+2     |       10  1           1 | 
+3     |     1  1 10             |
+4     |  1  1       10          |
+5     |  1             10       |
+6     |                   10  1 | 
+7     |     1  1           1 10 |
+Diagonal-dominant => SPD
 """
 
 rows = 8; cols = 8; shape = (rows, cols)
