@@ -14,8 +14,9 @@ void SparseCholeskySolver::initialize(CSRMatrix* A) {
     ordering.order();
 
     // 2. Symbolic phase
-    CSRPattern* patternL = symbolic.buildPatternL();
-    CSRPattern* patternL_T = symbolic.buildPatternL_T();
+    CSRPattern* patternL = new CSRPattern();
+    CSRPattern* patternL_T = new CSRPattern();
+    this->symbolic.buildPatterns(patternL, patternL_T);
 
     // 3. Factorization phase
     this->factorization.setPatternL(patternL);

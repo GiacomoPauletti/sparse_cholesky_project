@@ -345,14 +345,18 @@ int main() {
         std::cout << tree.parent(i) << ", ";
     }
     std::cout << "]" << std::endl;
-    CSRPattern* patternL = symbolic.buildPatternL();
+
+
+    CSRPattern* patternL = new CSRPattern();
+    CSRPattern* patternL_T = new CSRPattern();
+    symbolic.buildPatterns(patternL, patternL_T);
+
     if (check_pattern(patternL, &expectedPatternL) == false) {
         std::cout << ">>> OUTCOME: Failed Symbolic (L) test" << std::endl;
         patternL = &expectedPatternL;
     } else {
         std::cout << ">>> OUTCOME: Succeded Symbolic (L) test" << std::endl;
     }
-    CSRPattern* patternL_T = symbolic.buildPatternL_T();
     if (check_pattern(patternL_T, &expectedPatternL_T) == false) {
         std::cout << ">>> OUTCOME: Failed Symbolic (L^T) test" << std::endl;
         patternL = &expectedPatternL;

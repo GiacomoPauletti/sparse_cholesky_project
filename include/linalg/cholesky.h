@@ -27,8 +27,7 @@ class SparseCholeskySymbolic {
     public:
         SparseCholeskySymbolic(CSRMatrix* A);
         const CholeskyTree& buildTree();
-        CSRPattern* buildPatternL();
-        CSRPattern* buildPatternL_T();  // eventually buildPatternL and buildPatternL_T will be unified in buildPattern
+        void buildPatterns(CSRPattern* patternL, CSRPattern* patternL_T);
 };
         
 class SparseCholeskyFactorization {
