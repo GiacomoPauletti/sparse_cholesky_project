@@ -8,6 +8,7 @@ class CholeskyTree {
         CholeskyTree(int num_nodes);
         int& operator[](int index);
         int& parent(int index);
+        int parent(int index) const;
     private:
         std::vector<int> parentship;
 };

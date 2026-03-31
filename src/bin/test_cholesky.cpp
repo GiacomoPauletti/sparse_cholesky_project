@@ -29,7 +29,7 @@ bool check_pattern(CSRPattern* got, CSRPattern* expected) {
         std::cout << "Pattern row_start.size. Expected: " << expected->row_start.size << "; got: " << got->row_start.size << std::endl;
         return false;
     }
-    for ( int i=0; i<got->row_start.size; i++ ) {
+    for ( size_t i=0; i<got->row_start.size; i++ ) {
         if (got->row_start[i] != expected->row_start[i]) {
             std::cout << "Pattern row_start["<< i <<"]. Expected: " << expected->row_start[i] << "; got: " << got->row_start[i] << std::endl;
             return false;
@@ -40,9 +40,20 @@ bool check_pattern(CSRPattern* got, CSRPattern* expected) {
         std::cout << "Pattern col.size. Expected: " << expected->col.size << "; got: " << got->col.size << std::endl;
         return false;
     }
-    for ( int i=0; i<got->col.size; i++ ) {
+    for ( size_t i=0; i<got->col.size; i++ ) {
         if (got->col[i] != expected->col[i]) {
             std::cout << "Pattern col["<< i <<"]. Expected: " << expected->col[i] << "; got: " << got->col[i] << std::endl;
+            std::cout << "Pattern col comparison: " << std::endl;
+            std::cout << " Expected [";
+            for ( size_t j=0; j<got->col.size; j++ ) {
+                std::cout << expected->col[j] << ", ";
+            }
+            std::cout << "]" << std::endl;
+            std::cout << " Got      [";
+            for ( size_t j=0; j<got->col.size; j++ ) {
+                std::cout << got->col[j] << ", ";
+            }
+            std::cout << "]" << std::endl;
             return false;
         }
     }
@@ -72,21 +83,21 @@ bool check_matrix(CSRMatrix* got, CSRMatrix* expected, double tol=1e-5) {
         return false;
     }
 
-    for ( int i=0; i<got->rows+1; i++ ) {
+    for ( size_t i=0; i<got->rows+1; i++ ) {
         if (got->row_start[i] != expected->row_start[i]) {
             std::cout << "Matrix row_start["<< i <<"]. Expected: " << expected->row_start[i] << "; got: " << got->row_start[i] << std::endl;
             return false;
         }
     }
 
-    for ( int i=0; i<got->nnz; i++ ) {
+    for ( size_t i=0; i<got->nnz; i++ ) {
         if (got->col[i] != expected->col[i]) {
             std::cout << "Matrix col["<< i <<"]. Expected: " << expected->col[i] << "; got: " << got->col[i] << std::endl;
             return false;
         }
     }
 
-    for ( int i=0; i<got->nnz; i++ ) {
+    for ( size_t i=0; i<got->nnz; i++ ) {
         if (std::abs(got->data[i] != expected->data[i]) > tol) {
             std::cout << "Matrix data["<< i <<"]. Expected: " << expected->data[i] << "; got: " << got->data[i] << std::endl;
             return false;
@@ -108,7 +119,7 @@ bool check_solution(TArray<double>* got, TArray<double>* expected, double tol=1e
         std::cout << "Solution size. Expected: " << expected->size << "; got: " << got->size << std::endl;
         return false;
     }
-    for ( int i=0; i<got->size; i++ ) {
+    for ( size_t i=0; i<got->size; i++ ) {
         if (std::abs((*got)[i] - (*expected)[i]) > tol) {
             std::cout << fixed<10> << "Solution["<< i <<"]. Expected: " << (*expected)[i] << "; got: " << (*got)[i] << std::endl;
             return false;
@@ -327,6 +338,13 @@ int main() {
     ordering.order();
 
     std::cout << "==================== 3. SYMBOLIC PHASE TESTING =======================" << std::endl;
+    const CholeskyTree& tree = symbolic.buildTree();
+    std::cout << "Testing tree: expected [4, 3, 3, 4, 5, 7, 7, 0, ]" << std::endl;
+    std::cout << "              got      [";
+    for ( int i=0; i < 8; i++ ) {
+        std::cout << tree.parent(i) << ", ";
+    }
+    std::cout << "]" << std::endl;
     CSRPattern* patternL = symbolic.buildPatternL();
     if (check_pattern(patternL, &expectedPatternL) == false) {
         std::cout << ">>> OUTCOME: Failed Symbolic (L) test" << std::endl;

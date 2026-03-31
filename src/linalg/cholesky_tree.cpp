@@ -18,3 +18,6 @@ int& CholeskyTree::operator[](int index) {
 int& CholeskyTree::parent(int index) {
     return this->parentship[index];
 }
+int CholeskyTree::parent(int index) const {
+    return this->parentship[index];
+}
