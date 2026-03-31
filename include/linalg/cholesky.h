@@ -43,6 +43,7 @@ class SparseCholeskyFactorization {
 class SparseCholeskySolver {
     private:
         CSRMatrix* factor;
+        CSRMatrix* factor_T;
         SparseCholeskyOrdering ordering;
         SparseCholeskySymbolic symbolic;
         SparseCholeskyFactorization factorization;
@@ -51,6 +52,6 @@ class SparseCholeskySolver {
         SparseCholeskySolver(CSRMatrix* A);
         CSRMatrix* getFactor();
         void initialize(CSRMatrix* A);
-        void solve(double *__restrict x, double *__restrict b);  
+        void solve(double *__restrict x, const double *__restrict b);  
         ~SparseCholeskySolver();
 };

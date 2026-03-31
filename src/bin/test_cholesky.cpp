@@ -368,19 +368,49 @@ int main() {
     // 3. Factorization phase
     factorization.setPatternL(patternL);
     CSRMatrix* factor = factorization.factorize();
+    CSRMatrix* factor_T = nullptr;
     if (check_matrix(factor, &expectedL) == false) {
         std::cout << ">>> OUTCOME: Failed Factorization test" << std::endl;
         factor = &expectedL;
+        factor_T = &expectedL_T;
     } else {
         std::cout << ">>> OUTCOME: Succeded Factorization test" << std::endl;
     }
 
     // TODO: obtain factor_T (that is, L transposed) given factor
-    // ...
+    // Idea: 
+    // loop i from 0 to L->rows  -> i is the row in L
+    //    begin=row_start[i]
+    //    end=row_start[i] 
+    //    for element j in the array col[begin,end] -> j is the col in L
+    //      factor_T(j,i) = factor(i,j)    -> transpose
+    // 
 
     std::cout << "==================== 4. SOLVE PHASE TESTING =======================" << std::endl;
     // solver.solve(x,b) is equivalent to the following code
-    // TODO: implement resolution of LL^T*x = b
+    // 1. Forward substitution of Ly=b
+    TArray<double> y(factor->rows);
+    for (uint32_t i=0; i < factor->rows; i++) {
+        double rhs = b[i];
+        for (uint32_t j_index=factor->row_start[i]; j_index<factor->row_start[i+1] - 1; j_index++) {
+            uint32_t j = factor->col[j_index];
+            rhs -= factor->data[j_index] * y[j];    // alternatively L[i,j] * y[j]
+        }
+
+        uint32_t diagonal_index = factor->row_start[i+1] - 1;
+        y[i] = rhs / (factor->data[diagonal_index]);        // alternatively rhs / L[i,i]
+    }
+    // 2. Backward substitution of L^T x = y
+    for (int i=factor_T->rows-1; i >= 0; i--) {
+        double rhs = y[i];
+        for (uint32_t j_index=factor_T->row_start[i]+1; j_index<factor_T->row_start[i+1]; j_index++) {
+            uint32_t j = factor_T->col[j_index];
+            rhs -= factor_T->data[j_index] * x[j];    // alternatively L_T[i,j] * x[j]
+        }
+
+        uint32_t diagonal_index = factor_T->row_start[i];
+        x[i] = rhs / (factor_T->data[diagonal_index]);        // alternatively rhs / L_T[i,i]
+    }
 
     if (check_solution(&x, &expectedX) == false) {
         std::cout << ">>> OUTCOME: Failed Solution test" << std::endl;
