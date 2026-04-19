@@ -97,11 +97,13 @@ bool check_matrix(CSRMatrix* got, CSRMatrix* expected, double tol=1e-5) {
         }
     }
 
-    for ( size_t i=0; i<got->nnz; i++ ) {
-        if (std::abs(got->data[i] != expected->data[i]) > tol) {
-            std::cout << "Matrix data["<< i <<"]. Expected: " << expected->data[i] << "; got: " << got->data[i] << std::endl;
-            return false;
-        }
+    for ( size_t i=0; i <got->nnz; i++ ) {
+       if (std::abs(got->data[i] - expected->data[i]) > tol) {
+    std::cout << std::setprecision(15) << "Matrix data[" << i << "]. Expected: " 
+              << expected->data[i] << "; got: " << got->data[i] 
+              << " diff: " << std::abs(got->data[i] - expected->data[i]) << std::endl;
+    return false;
+}
     }
 
     return true;
