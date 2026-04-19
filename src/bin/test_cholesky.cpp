@@ -377,6 +377,7 @@ int main() {
         factor_T = &expectedL_T;
     } else {
         std::cout << ">>> OUTCOME: Succeded Factorization test" << std::endl;
+         factor_T = &expectedL_T;
     }
 
     // TODO: obtain factor_T (that is, L transposed) given factor

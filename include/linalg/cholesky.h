@@ -38,6 +38,7 @@ class SparseCholeskyFactorization {
     private:
         CSRMatrix* A;
         CSRPattern* patternL; // sparsity pattern
+        CSRPattern* patternL_T = nullptr;
     public:
         SparseCholeskyFactorization(CSRMatrix* A);
         void setPatternL(CSRPattern* patternL); // computes the numerical values of L 
@@ -46,8 +47,10 @@ class SparseCholeskyFactorization {
 
 class SparseCholeskySolver {
     private:
-        CSRMatrix* factor;
-        CSRMatrix* factor_T = nullptr;
+        CSRMatrix*  factor     = nullptr;
+        CSRMatrix*  factor_T   = nullptr;
+        CSRPattern* patternL   = nullptr;
+        CSRPattern* patternL_T = nullptr;
         SparseCholeskyOrdering ordering;
         SparseCholeskySymbolic symbolic;
         SparseCholeskyFactorization factorization;

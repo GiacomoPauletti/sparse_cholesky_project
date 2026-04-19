@@ -10,20 +10,39 @@ CSRMatrix* SparseCholeskySolver::getFactor() {
 }
 
 void SparseCholeskySolver::initialize(CSRMatrix* A) {
-    // 1. Ordering phase
     ordering.order();
 
-    // 2. Symbolic phase
-    CSRPattern* patternL = new CSRPattern();
-    CSRPattern* patternL_T = new CSRPattern();
-    this->symbolic.buildPatterns(patternL, patternL_T);
+    patternL   = new CSRPattern();
+    patternL_T = new CSRPattern();
+    symbolic.buildPatterns(patternL, patternL_T);
 
-    // 3. Factorization phase
-    this->factorization.setPatternL(patternL);
-    this->factor = factorization.factorize();
+    factorization.setPatternL(patternL);
+    factor = factorization.factorize();
 
-    // TODO
-    // this->factor_T
+    uint32_t n = factor->rows;
+
+    factor_T           = new CSRMatrix();
+    factor_T->symmetric = false;
+    factor_T->rows      = n;
+    factor_T->cols      = n;
+    factor_T->nnz       = patternL_T->nnz;
+    factor_T->row_start = patternL_T->row_start.data;
+    factor_T->col       = patternL_T->col.data;
+    factor_T->data.resize(patternL_T->nnz);
+
+    for (uint32_t i = 0; i < n; i++) {
+        for (uint32_t k = factor->row_start[i]; k < factor->row_start[i + 1]; k++) {
+            uint32_t j = factor->col[k];
+            int lo = (int)factor_T->row_start[j];
+            int hi = (int)factor_T->row_start[j + 1] - 1;
+            while (lo <= hi) {
+                int mid = (lo + hi) / 2;
+                if      (factor_T->col[mid] == i) { factor_T->data[mid] = factor->data[k]; break; }
+                else if (factor_T->col[mid] <  i) lo = mid + 1;
+                else                               hi = mid - 1;
+            }
+        }
+    }
 }
 
 void SparseCholeskySolver::solve(double *__restrict x, const double *__restrict b) {
@@ -53,6 +72,8 @@ void SparseCholeskySolver::solve(double *__restrict x, const double *__restrict 
 }
 
 SparseCholeskySolver::~SparseCholeskySolver() {
-    free(this->factor);
-    free(this->factor_T);
+    delete this->factor;
+    delete this->factor_T;
+    delete this->patternL;
+    delete this->patternL_T;
 }
