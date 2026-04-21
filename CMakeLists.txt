@@ -8,6 +8,17 @@ set(CMAKE_POSITION_INDEPENDENT_CODE OFF)
 project(MU5MAM30 LANGUAGES CXX C)
 
 find_package(OpenGL REQUIRED)
+###############################################################################
+find_package(CURL REQUIRED)
+find_package(LibArchive REQUIRED)
+add_executable(suite_sparse
+    src/bin/suite_sparse.cpp
+)
+target_compile_options(suite_sparse PRIVATE
+    -std=c++17 -Wall -Wextra
+)
+target_link_libraries(suite_sparse PRIVATE nanofem CURL::libcurl LibArchive::LibArchive)
+###############################################################################
 
 ###############################################################################
 set(USE_OPENMP FALSE)

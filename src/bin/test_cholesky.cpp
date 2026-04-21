@@ -376,9 +376,30 @@ int main() {
         factor = &expectedL;
         factor_T = &expectedL_T;
     } else {
-        std::cout << ">>> OUTCOME: Succeded Factorization test" << std::endl;
-         factor_T = &expectedL_T;
+    std::cout << ">>> OUTCOME: Succeded Factorization test" << std::endl;
+    factor_T = new CSRMatrix();
+    factor_T->symmetric = false;
+    factor_T->rows      = patternL_T->rows;
+    factor_T->cols      = patternL_T->cols;
+    factor_T->nnz       = patternL_T->nnz;
+    factor_T->row_start = patternL_T->row_start.data;
+    factor_T->col       = patternL_T->col.data;
+    factor_T->data.resize(patternL_T->nnz);
+
+    for (uint32_t i = 0; i < factor->rows; i++) {
+        for (uint32_t k = factor->row_start[i]; k < factor->row_start[i + 1]; k++) {
+            uint32_t j = factor->col[k];
+            int lo = (int)factor_T->row_start[j];
+            int hi = (int)factor_T->row_start[j + 1] - 1;
+            while (lo <= hi) {
+                int mid = (lo + hi) / 2;
+                if      (factor_T->col[mid] == i) { factor_T->data[mid] = factor->data[k]; break; }
+                else if (factor_T->col[mid] <  i) lo = mid + 1;
+                else                               hi = mid - 1;
+            }
+        }
     }
+}
 
     // TODO: obtain factor_T (that is, L transposed) given factor
     // Idea: 

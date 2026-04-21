@@ -9,36 +9,37 @@ SparseCholeskySymbolic::SparseCholeskySymbolic(CSRMatrix* A)
 }
 const CholeskyTree& SparseCholeskySymbolic::buildTree() {
     this->isTreeBuilt = true;
-
     this->tree = CholeskyTree(A->rows);
 
     AdjacencyGraph G(A);
     std::vector<uint32_t> ancestor(A->rows);
-    // Build cholesky tree
-    for (uint32_t i=0; i < A->rows; i++) {
-        tree.parent(i) = 0; ancestor[i] = 0;
+
+    for (uint32_t i = 0; i < A->rows; i++) {
+        tree.parent(i) = i;   /* default: node points to itself */
+        ancestor[i] = i;      /* sentinel for this iteration */
 
         const std::vector<uint32_t> adj_i = G.adj(i);
-        for (uint32_t j: adj_i) {
+        for (uint32_t j : adj_i) {
             if (j >= i) continue;
 
             uint32_t jroot = j;
-            while (ancestor[jroot] != 0 && ancestor[jroot] != i) {
+            while ((uint32_t)ancestor[jroot] != i) {
                 uint32_t l = ancestor[jroot];
-                ancestor[jroot] = i;    // path compression -> next time start from i and 
-                                        //                     don't go through the path 
-                                        //                     from jroot to i 
+                ancestor[jroot] = i;
                 jroot = l;
             }
 
-            if (ancestor[jroot] == 0 ) {
+            if ((uint32_t)tree.parent(jroot) == jroot) {
                 ancestor[jroot] = i;
                 tree.parent(jroot) = i;
             }
         }
     }
 
-    // end of tree construction
+    /* root node has no parent — set to 0 by convention */
+    for (uint32_t i = 0; i < A->rows; i++)
+        if ((uint32_t)tree.parent(i) == i)
+            tree.parent(i) = 0;
 
     return this->tree;
 }

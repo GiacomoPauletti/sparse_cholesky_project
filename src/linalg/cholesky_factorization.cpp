@@ -31,6 +31,10 @@ CSRMatrix* SparseCholeskyFactorization::factorize() {
     L->row_start = patternL->row_start.data;
     L->col       = patternL->col.data;
     L->data.resize(nnz);
+    
+    // fill L's data with A's values where the pattern matches, and 0.0 otherwise
+    for (size_t i = 0; i < nnz; i++)
+    L->data[i] = 0.0;
 
     // we exploit the fact that both A and L have their column indices
     // sorted in increasing order within each row. Instead of binary searching
@@ -129,8 +133,15 @@ CSRMatrix* SparseCholeskyFactorization::factorize() {
                 }
             }
         }
-
-        ASSERT_ALWAYS(L->data[diag_j] > 0.0);
+if (L->data[diag_j] <= 0.0) {
+    printf("Failed at j=%d: L[j,j]=%.6e\n", j, L->data[diag_j]);
+    printf("  A[j,j]=%.6e\n", A->data[A->row_start[j+1]-1]);
+    printf("  Row j in L: ");
+    for (uint32_t p = L->row_start[j]; p < L->row_start[j+1]; p++)
+        printf("(%d, %.3e) ", L->col[p], L->data[p]);
+    printf("\n");
+}
+ASSERT_ALWAYS(L->data[diag_j] > 0.0);
         L->data[diag_j] = std::sqrt(L->data[diag_j]);
         double ljj = L->data[diag_j];
 
