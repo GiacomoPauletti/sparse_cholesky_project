@@ -133,15 +133,8 @@ CSRMatrix* SparseCholeskyFactorization::factorize() {
                 }
             }
         }
-if (L->data[diag_j] <= 0.0) {
-    printf("Failed at j=%d: L[j,j]=%.6e\n", j, L->data[diag_j]);
-    printf("  A[j,j]=%.6e\n", A->data[A->row_start[j+1]-1]);
-    printf("  Row j in L: ");
-    for (uint32_t p = L->row_start[j]; p < L->row_start[j+1]; p++)
-        printf("(%d, %.3e) ", L->col[p], L->data[p]);
-    printf("\n");
-}
-ASSERT_ALWAYS(L->data[diag_j] > 0.0);
+ 
+    ASSERT_ALWAYS(L->data[diag_j] > 0.0);
         L->data[diag_j] = std::sqrt(L->data[diag_j]);
         double ljj = L->data[diag_j];
 
