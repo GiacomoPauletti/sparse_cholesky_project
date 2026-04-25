@@ -19,6 +19,13 @@ target_compile_options(suite_sparse PRIVATE
 )
 target_link_libraries(suite_sparse PRIVATE nanofem CURL::libcurl LibArchive::LibArchive)
 ###############################################################################
+###############################################################################
+add_executable(suite_sparse_analysis src/bin/suite_sparse_analysis.cpp)
+target_compile_options(suite_sparse_analysis PRIVATE
+    -std=c++17 -Wall -Wextra
+)
+target_link_libraries(suite_sparse_analysis PRIVATE nanofem CURL::libcurl LibArchive::LibArchive)
+###############################################################################
 
 ###############################################################################
 set(USE_OPENMP FALSE)
