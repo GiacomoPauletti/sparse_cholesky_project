@@ -15,13 +15,13 @@ const CholeskyTree& SparseCholeskySymbolic::buildTree() {
     std::vector<uint32_t> ancestor(A->rows);
 
     for (uint32_t i = 0; i < A->rows; i++) {
-        tree.parent(i) = i;   /* default: node points to itself */
-        ancestor[i] = i;      /* sentinel for this iteration */
+              
 
         const std::vector<uint32_t> adj_i = G.adj(i);
         for (uint32_t j : adj_i) {
             if (j >= i) continue;
 
+            // path compression
             uint32_t jroot = j;
             while ((uint32_t)ancestor[jroot] != i) {
                 uint32_t l = ancestor[jroot];
@@ -30,21 +30,24 @@ const CholeskyTree& SparseCholeskySymbolic::buildTree() {
             }
 
             if ((uint32_t)tree.parent(jroot) == jroot) {
-                ancestor[jroot] = i;
+                ancestor[jroot] = i; 
                 tree.parent(jroot) = i;
             }
         }
     }
 
-    /* root node has no parent — set to 0 by convention */
+    /* root node(s) have no parent — marked with NO_PARENT */
     for (uint32_t i = 0; i < A->rows; i++)
         if ((uint32_t)tree.parent(i) == i)
-            tree.parent(i) = 0;
+            tree.parent(i) = CholeskyTree::NO_PARENT;
 
     return this->tree;
 }
-void SparseCholeskySymbolic::buildPatterns(CSRPattern* patternL, CSRPattern* patternL_T) {
-    if ( !this->isTreeBuilt ) {
+
+void SparseCholeskySymbolic::buildPatterns(CSRPattern* patternL, 
+    CSRPattern* patternL_T) {
+    
+        if ( !this->isTreeBuilt ) {
         this->buildTree();
     }
 
@@ -63,27 +66,35 @@ void SparseCholeskySymbolic::buildPatterns(CSRPattern* patternL, CSRPattern* pat
     patternL_T->nnz = 0;
     patternL_T->row_start.resize(A->rows+1);
     patternL_T->col.resize(0);
+    
+    // row_L (i) = { }
     std::vector<std::vector<uint32_t>> patternL_T_rows(A->cols);
-
+    
+    // mark [i] = 0
     std::vector<uint32_t> mark(A->rows, 0);
 
     AdjacencyGraph G(A);
+    
+    // loop over all rows of A
     for (uint32_t i=0; i < A->rows; i++) {
+       
         patternL->row_start[i] = patternL->col.size;
         mark[i] = i;
-
+   
+        // loop over the below-diagonal entries of row i of A
         const std::vector<uint32_t> adj_i = G.adj(i);
         for (uint32_t k : adj_i) {
             if (k >= i) continue;
 
             uint32_t j = k;
 
-            while (mark[j] != i) {
-                mark[j] = i;
-                patternL->col.push_back(j);     // (i,j) -> row i, col j (L)
-                patternL_T_rows[j].push_back(i); // (i,j) -> row j, col i (L_T)
-                j = tree.parent(j);
-            }
+        // while column j not yet encountered in row i
+        while (j != (uint32_t)CholeskyTree::NO_PARENT && mark[j] != i) {
+            mark[j] = i; // mark column j as encountered in row i
+            patternL->col.push_back(j);   // add column j to row i of L's pattern
+            patternL_T_rows[j].push_back(i); // add row i to column j of L^T's pattern
+            j = tree.parent(j); // move up the elimination tree to the parent of j
+}
         }
         std::sort(&patternL->col.data[patternL->row_start[i]], 
                   patternL->col.data + patternL->col.size);

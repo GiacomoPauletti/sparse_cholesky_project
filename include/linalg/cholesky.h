@@ -8,6 +8,7 @@
 
 class CholeskyTree {
     public:
+        static constexpr int NO_PARENT = -1;
         CholeskyTree(); // elimination tree
         CholeskyTree(int num_nodes); // for each node
         int& operator[](int index);
@@ -31,7 +32,7 @@ class SparseCholeskySymbolic {
     public:
         SparseCholeskySymbolic(CSRMatrix* A);
         const CholeskyTree& buildTree(); // constructs the elimination tree
-       void buildPatterns(CSRPattern* patternL, CSRPattern* patternL_T);
+        void buildPatterns(CSRPattern* patternL, CSRPattern* patternL_T);
 };
         
 class SparseCholeskyFactorization {
