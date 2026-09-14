@@ -15,7 +15,8 @@ const CholeskyTree& SparseCholeskySymbolic::buildTree() {
     std::vector<uint32_t> ancestor(A->rows);
 
     for (uint32_t i = 0; i < A->rows; i++) {
-              
+        tree.parent(i) = i;   /* default: node points to itself */
+        ancestor[i] = i;      /* sentinel for this iteration */
 
         const std::vector<uint32_t> adj_i = G.adj(i);
         for (uint32_t j : adj_i) {
