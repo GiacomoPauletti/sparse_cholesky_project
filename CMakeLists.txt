@@ -145,6 +145,17 @@ target_link_libraries(test_cholesky PRIVATE nanofem nanoviewer tiny_expr)
 ###############################################################################
 
 ###############################################################################
+add_executable(test_cube_ordering
+	src/common/logging.cpp
+	src/bin/test_cube_ordering.cpp
+)
+target_compile_options(test_cube_ordering PRIVATE
+	-std=c++17 -Wall -Wextra -Wno-missing-field-initializers
+)
+target_link_libraries(test_cube_ordering PRIVATE nanofem)
+###############################################################################
+
+###############################################################################
 #add_executable(test_ordering
 #	src/common/logging.cpp
 #	src/common/chrono.cpp
@@ -180,4 +191,3 @@ target_include_directories(tiny_expr PUBLIC
 ###############################################################################
 
 add_subdirectory(extern/glfw)
-

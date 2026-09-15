@@ -341,7 +341,7 @@ int main() {
 
     std::cout << "==================== 3. SYMBOLIC PHASE TESTING =======================" << std::endl;
     const CholeskyTree& tree = symbolic.buildTree();
-    std::cout << "Testing tree: expected [4, 3, 3, 4, 5, 7, 7, 0, ]" << std::endl;
+    std::cout << "Testing tree: expected [4, 3, 3, 4, 5, 7, 7, -1, ]" << std::endl;
     std::cout << "              got      [";
     for ( int i=0; i < 8; i++ ) {
         std::cout << tree.parent(i) << ", ";
