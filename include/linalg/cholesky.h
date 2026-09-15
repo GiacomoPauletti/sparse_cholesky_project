@@ -19,9 +19,17 @@ class CholeskyTree {
 };
 
 class SparseCholeskyOrdering {
+    private:
+        CSRMatrix* A = nullptr;
+        std::vector<uint32_t> perm;   // old index -> new index
+        bool computed = false;
     public:
-        SparseCholeskyOrdering(); // meant to reduce fill-in
-        void order();    // Still to be figured out...
+        SparseCholeskyOrdering();              // kept for backward compatibility
+        SparseCholeskyOrdering(CSRMatrix* A);  // preferred: operates on any CSR matrix
+        void setMatrix(CSRMatrix* A);
+        void order();                           // computes a nested-dissection permutation
+        const std::vector<uint32_t>& permutation() const; // old index -> new index
+        void applyToPattern(const CSRPattern& P, CSRPattern* out) const; // build the permuted pattern
 };
 
 class SparseCholeskySymbolic {

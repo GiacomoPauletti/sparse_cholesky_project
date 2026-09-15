@@ -11,12 +11,10 @@ struct FillInResult {
     double ratioA, ratioWorst;
 };
 
-static FillInResult compute_fill_in(Mesh &m) {
-    CSRPattern P;
-    CSRMatrix  S;
-    build_P1_CSRPattern(m, P);
-    build_P1_stiffness_matrix(m, P, S);
-
+/* Runs the symbolic phase on (S, P) as given -- S/P should already be in
+ * whatever vertex ordering is being tested (natural, or permuted by
+ * SparseCholeskyOrdering). */
+static FillInResult compute_fill_in(CSRMatrix &S) {
     SparseCholeskySymbolic symbolic(&S);
     symbolic.buildTree();
 
@@ -34,6 +32,24 @@ static FillInResult compute_fill_in(Mesh &m) {
     return r;
 }
 
+/* Builds the natural-order stiffness matrix, then a graph-permuted copy
+ * of it using SparseCholeskyOrdering's nested dissection. */
+static void build_both(Mesh &m, CSRPattern &Pnat, CSRMatrix &Snat, CSRMatrix &Sgraph, CSRPattern &Pgraph) {
+    build_P1_CSRPattern(m, Pnat);
+    build_P1_stiffness_matrix(m, Pnat, Snat);
+
+    SparseCholeskyOrdering ordering(&Snat);
+    ordering.order();
+    ordering.applyToPattern(Pnat, &Pgraph);
+
+    Sgraph.symmetric = true;
+    Sgraph.rows = Sgraph.cols = Pgraph.rows;
+    Sgraph.nnz = Pgraph.nnz;
+    Sgraph.row_start = Pgraph.row_start.data;
+    Sgraph.col = Pgraph.col.data;
+    Sgraph.data.resize(Sgraph.nnz); /* structure only, values unused */
+}
+
 static void print_result(const char *label, const FillInResult &r) {
     printf("%s\n", label);
     printf("  rows              = %ld\n", r.n);
@@ -47,7 +63,7 @@ static void print_result(const char *label, const FillInResult &r) {
 
 int main(int argc, char **argv) {
     /* Single-size mode (unchanged): ./test_cube_ordering <subdiv>
-     * Sweep mode (new): ./test_cube_ordering --sweep out.csv s1 s2 s3 ...   */
+     * Sweep mode: ./test_cube_ordering --sweep out.csv s1 s2 s3 ...   */
     if (argc > 1 && std::string(argv[1]) == "--sweep") {
         if (argc < 4) {
             printf("usage: %s --sweep <out.csv> <subdiv1> [subdiv2 ...]\n", argv[0]);
@@ -66,14 +82,17 @@ int main(int argc, char **argv) {
         for (int i = 3; i < argc; i++) {
             size_t subdiv = (size_t)atoi(argv[i]);
 
-            Mesh mNatural, mNested;
-            if (load_cube(mNatural, subdiv) != 0) { printf("load_cube failed (subdiv=%zu)\n", subdiv); continue; }
-            if (load_cube_nested_dissect(mNested, subdiv) != 0) { printf("load_cube_nested_dissect failed (subdiv=%zu)\n", subdiv); continue; }
+            Mesh m;
+            if (load_cube(m, subdiv) != 0) { printf("load_cube failed (subdiv=%zu)\n", subdiv); continue; }
 
-            FillInResult rNat = compute_fill_in(mNatural);
-            FillInResult rNes = compute_fill_in(mNested);
+            CSRPattern Pnat, Pgraph;
+            CSRMatrix Snat, Sgraph;
+            build_both(m, Pnat, Snat, Sgraph, Pgraph);
 
-            printf("subdiv=%zu  natural: n=%ld nnzL=%ld ratio=%.3f  |  nested: n=%ld nnzL=%ld ratio=%.3f\n",
+            FillInResult rNat = compute_fill_in(Snat);
+            FillInResult rNes = compute_fill_in(Sgraph);
+
+            printf("subdiv=%zu  natural: n=%ld nnzL=%ld ratio=%.3f  |  graph-ND: n=%ld nnzL=%ld ratio=%.3f\n",
                    subdiv, rNat.n, rNat.nnzL, rNat.ratioA, rNes.n, rNes.nnzL, rNes.ratioA);
 
             fprintf(f, "natural,%zu,%ld,%ld,%ld,%ld,%.6f,%.6f\n",
@@ -90,13 +109,16 @@ int main(int argc, char **argv) {
     /* single-size mode */
     size_t subdiv = (argc > 1) ? (size_t)atoi(argv[1]) : 8;
 
-    Mesh mNatural, mNested;
-    if (load_cube(mNatural, subdiv) != 0) { printf("load_cube failed\n"); return 1; }
-    if (load_cube_nested_dissect(mNested, subdiv) != 0) { printf("load_cube_nested_dissect failed\n"); return 1; }
+    Mesh m;
+    if (load_cube(m, subdiv) != 0) { printf("load_cube failed\n"); return 1; }
+
+    CSRPattern Pnat, Pgraph;
+    CSRMatrix Snat, Sgraph;
+    build_both(m, Pnat, Snat, Sgraph, Pgraph);
 
     printf("==================== Fill-in comparison (subdiv=%zu) =======================\n\n", subdiv);
-    print_result("Natural ordering (load_cube)", compute_fill_in(mNatural));
-    print_result("Nested dissection ordering (load_cube_nested_dissect)", compute_fill_in(mNested));
+    print_result("Natural ordering (load_cube)", compute_fill_in(Snat));
+    print_result("Graph-based nested dissection (SparseCholeskyOrdering)", compute_fill_in(Sgraph));
 
     return 0;
 }

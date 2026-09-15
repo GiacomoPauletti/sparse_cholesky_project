@@ -26,7 +26,7 @@ double cg_iterate_once(const Matrix &A, double *__restrict x,
 	double r2_new = blas_dot(r, r, N);
 
 	/* beta_k = r_{k+1}^Tr_{k+1} / (r_k^T r_k) */
-	/* p_{k+1} = r_{k+1} + beta_{k+1} p_k */
+	/* p_{k+1} = r_{k+1} + beta_{k} p_k */
 	double beta = r2_new / r2;
 	blas_axpby(1, r, beta, p, N);
 
