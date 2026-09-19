@@ -7,7 +7,13 @@
 #include "P1.h"
 #include "tiny_blas.h"
 
-NavierStokesSolver::NavierStokesSolver(const Mesh &m)
+#if USE_FEM_MATRIX
+NavierStokesSolver::NavierStokesSolver(const Mesh &m, Profiler *profiler)
+#else
+NavierStokesSolver::NavierStokesSolver(const Mesh &m, Profiler *profiler,
+				       LinearSolverKind backend, double tol,
+				       size_t iter_max)
+#endif
 	: m(m)
 	, N(m.vertex_count())
 	, omega(N)
@@ -17,6 +23,12 @@ NavierStokesSolver::NavierStokesSolver(const Mesh &m)
 	, p(N)
 	, Ap(N)
 {
+	this->profiler = profiler;
+#if !USE_FEM_MATRIX
+	this->backend = backend;
+	this->tol = tol;
+	this->iter_max = iter_max;
+#endif
 #if USE_FEM_MATRIX
 	build_P1_mass_matrix(m, M);
 	build_P1_stiffness_matrix(m, S);

@@ -364,6 +364,19 @@ static void draw_gui(NavierStokesSolver &solver)
 	ImGui::SliderFloat("  ", &mesh_deform, 0.f, 1.f);
 
 	ImGui::Text(" ");
+	ImGui::Text("Linear solver :");
+	int backend = (solver.backend == SOLVER_CG) ? 1 : 0;
+	bool changed = ImGui::RadioButton("Cholesky (direct)", &backend, 0);
+	changed |= ImGui::RadioButton("Conjugate gradient", &backend, 1);
+	if (changed) {
+		solver.set_backend(backend ? SOLVER_CG : SOLVER_CHOLESKY);
+	}
+	if (solver.backend == SOLVER_CG) {
+		ImGui::Text("Iterations : %zu (psi), %zu (omega)",
+			    solver.stream_iter, solver.vort_iter);
+	}
+
+	ImGui::Text(" ");
 	ImGui::Text("Number of DOF : %zu", solver.N);
 	float fps = ImGui::GetIO().Framerate;
 	ImGui::Text("Average framerate : %.1f FPS", fps);

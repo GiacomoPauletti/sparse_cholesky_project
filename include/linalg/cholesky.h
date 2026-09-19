@@ -1,6 +1,9 @@
+#pragma once
+
 #include <vector>
 
 #include "sparse_matrix.h"
+#include "linear_solver.h"
 
 
 // each class corresponds to a phase of the Sparse_Cholesky Pipeline
@@ -54,7 +57,7 @@ class SparseCholeskyFactorization {
         CSRMatrix* factorize();
 };
 
-class SparseCholeskySolver {
+class SparseCholeskySolver : public LinearSolver {
     private:
         CSRMatrix*  factor     = nullptr;
         CSRMatrix*  factor_T   = nullptr;
@@ -65,10 +68,12 @@ class SparseCholeskySolver {
         SparseCholeskyFactorization factorization;
 
     public:
-        SparseCholeskySolver(CSRMatrix* A);
+        /* profiler is optional : nullptr (the default) disables the
+         * per-phase instrumentation of this solver. */
+        SparseCholeskySolver(CSRMatrix* A, Profiler* profiler = nullptr);
         CSRMatrix* getFactor();
-        void initialize(CSRMatrix* A);
+        void initialize(CSRMatrix* A) override;
         // forward substitution of L, backward substitution using L^T
-        void solve(double *__restrict x, const double *__restrict b);  
-        ~SparseCholeskySolver();
+        void solve(double *__restrict x, const double *__restrict b) override;  
+        ~SparseCholeskySolver() override;
 };

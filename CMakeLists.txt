@@ -49,6 +49,8 @@ add_library(nanofem
 	src/fem/poisson.cpp
 	solutions/src/fem/navier_stokes.cpp
 	solutions/src/linalg/conjugate_gradient.cpp
+	src/linalg/linear_solver.cpp
+	src/linalg/conjugate_gradient2.cpp
 	src/matrix/fem_matrix.cpp
 	solutions/src/matrix/sparse_matrix.cpp
 	#src/matrix/spy.cpp
@@ -66,6 +68,8 @@ add_library(nanofem
 	src/linalg/cholesky_symbolic.cpp
 	src/linalg/cholesky_factorization.cpp
 	src/linalg/cholesky_tree.cpp
+
+	src/profile/profiler.cpp
 )
 target_include_directories(nanofem PUBLIC 
 	include/common 
@@ -73,6 +77,7 @@ target_include_directories(nanofem PUBLIC
 	include/linalg
 	include/matrix 
 	include/mesh 
+	include/profile
 	extern
 )
 target_compile_options(nanofem PRIVATE 
@@ -131,6 +136,28 @@ target_compile_options(test_NS PRIVATE
 	-std=c++17 -Wall -Wextra -Wno-missing-field-initializers
 )
 target_link_libraries(test_NS PRIVATE nanofem nanoviewer tiny_expr)
+###############################################################################
+
+###############################################################################
+add_executable(profile_NS
+	src/common/logging.cpp
+	src/bin/profile_navier_stokes.cpp
+)
+target_compile_options(profile_NS PRIVATE
+	-std=c++17 -Wall -Wextra -Wno-missing-field-initializers
+)
+target_link_libraries(profile_NS PRIVATE nanofem)
+###############################################################################
+
+###############################################################################
+add_executable(bench_cg_vs_cholesky
+	src/common/logging.cpp
+	src/bin/bench_cg_vs_cholesky.cpp
+)
+target_compile_options(bench_cg_vs_cholesky PRIVATE
+	-std=c++17 -Wall -Wextra -Wno-missing-field-initializers
+)
+target_link_libraries(bench_cg_vs_cholesky PRIVATE nanofem)
 ###############################################################################
 
 ###############################################################################
