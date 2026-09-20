@@ -32,7 +32,9 @@ struct NavierStokesSolver {
 	 * factorization when profiling the CG backend. */
 	NavierStokesSolver(const Mesh &m, Profiler *profiler = nullptr,
 			   LinearSolverKind backend = SOLVER_CHOLESKY,
-			   double tol = 1e-6, size_t iter_max = 500);
+			   double tol = 1e-6, size_t iter_max = 500,
+			   CholeskyOrderingKind ordering =
+			       CHOLESKY_ORDERING_NATURAL);
 #endif
 	~NavierStokesSolver();
 	const Mesh &m;
@@ -68,6 +70,9 @@ struct NavierStokesSolver {
 	double cached_coeff = -1.0; // nu*dt the current vort_solver was built for
 
 	LinearSolverKind backend = SOLVER_CHOLESKY;
+	/* Which permutation the Cholesky backend factorizes in. Ignored by CG.
+	 * Like backend, changing it needs the solvers rebuilt. */
+	CholeskyOrderingKind cholesky_ordering = CHOLESKY_ORDERING_NATURAL;
 	/* Switches backend and discards the current solvers. The vorticity one
 	 * is rebuilt lazily at the next time_step(). */
 	void set_backend(LinearSolverKind kind);

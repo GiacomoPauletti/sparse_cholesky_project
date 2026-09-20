@@ -4,6 +4,7 @@
 #include <numeric>
 #include "cholesky.h"
 #include "adjacency_graph.h"
+#include "sys_utils.h"
 
 /* Below this size, a subgraph is left in its current relative order rather
  * than being split further -- separating tiny pieces costs more than it
@@ -222,26 +223,44 @@ void SparseCholeskyOrdering::order() {
     computed = true;
 }
 
+bool SparseCholeskyOrdering::isComputed() const {
+    return computed;
+}
+
 const std::vector<uint32_t>& SparseCholeskyOrdering::permutation() const {
     return perm;
 }
 
-void SparseCholeskyOrdering::applyToPattern(const CSRPattern& P, CSRPattern* out) const {
-    uint32_t n = (uint32_t)P.rows;
-
-    /* Build full undirected edge list in the ORIGINAL numbering first
-     * (P typically stores only the lower triangle). */
+/* -----------------------------------------------------------------------
+ * permuted_pattern: shared by applyToPattern and applyToMatrix. Builds the
+ * lower triangular pattern of P A P^T from the index arrays of a symmetric
+ * matrix stored as its lower triangle.
+ *
+ * Each output row holds its strictly lower columns in ascending order
+ * followed by the diagonal, which -- the diagonal being the largest index of
+ * the row -- means the row is ascending throughout. That is the convention
+ * both the factorization (merge scan against A) and the substitutions
+ * (diagonal at row_end - 1) rely on.
+ * ----------------------------------------------------------------------- */
+static void permuted_pattern(uint32_t n, const uint32_t* row_start,
+                             const uint32_t* col,
+                             const std::vector<uint32_t>& perm,
+                             bool symmetric, CSRPattern* out)
+{
+    /* Full undirected edge list in the ORIGINAL numbering first : only one of
+     * (i,j) and (j,i) is stored, but the permutation may flip which side of
+     * the diagonal the entry lands on. */
     std::vector<std::vector<uint32_t>> fullAdj(n);
     for (uint32_t i = 0; i < n; i++) {
-        for (uint32_t k = P.row_start[i]; k < P.row_start[i + 1]; k++) {
-            uint32_t j = P.col[k];
+        for (uint32_t k = row_start[i]; k < row_start[i + 1]; k++) {
+            uint32_t j = col[k];
             if (j == i) continue;
             fullAdj[i].push_back(j);
             fullAdj[j].push_back(i);
         }
     }
 
-    out->symmetric = P.symmetric;
+    out->symmetric = symmetric;
     out->rows = out->cols = n;
     out->row_start.resize(n + 1);
     out->col.resize(0);
@@ -266,4 +285,56 @@ void SparseCholeskyOrdering::applyToPattern(const CSRPattern& P, CSRPattern* out
     }
     out->row_start[n] = out->col.size;
     out->nnz = out->col.size;
+}
+
+void SparseCholeskyOrdering::applyToPattern(const CSRPattern& P, CSRPattern* out) const {
+    permuted_pattern((uint32_t)P.rows, P.row_start.data, P.col.data, perm,
+                     P.symmetric, out);
+}
+
+void SparseCholeskyOrdering::applyToMatrix(const CSRMatrix& M,
+                                           CSRPattern* outPattern,
+                                           CSRMatrix* out) const
+{
+    uint32_t n = (uint32_t)M.rows;
+    ASSERT_ALWAYS(computed);
+    ASSERT_ALWAYS(perm.size() == n);
+
+    permuted_pattern(n, M.row_start, M.col, perm, M.symmetric, outPattern);
+
+    out->symmetric = M.symmetric;
+    out->rows = outPattern->rows;
+    out->cols = outPattern->cols;
+    out->nnz = outPattern->nnz;
+    out->row_start = outPattern->row_start.data;
+    out->col = outPattern->col.data;
+    out->data.resize(outPattern->nnz);
+    for (size_t k = 0; k < outPattern->nnz; k++) out->data[k] = 0.0;
+
+    /* Scatter the values. Entry (i,j) of A becomes entry (perm[i],perm[j]),
+     * which the permutation may move above the diagonal ; since the matrix is
+     * symmetric and only the lower triangle is stored, it is written at
+     * (max,min) either way. */
+    for (uint32_t i = 0; i < n; i++) {
+        for (uint32_t k = M.row_start[i]; k < M.row_start[i + 1]; k++) {
+            uint32_t j = M.col[k];
+            uint32_t pi = perm[i];
+            uint32_t pj = perm[j];
+            uint32_t r = (pi > pj) ? pi : pj;
+            uint32_t c = (pi > pj) ? pj : pi;
+
+            /* The row is ascending throughout, so a plain binary search finds
+             * the slot, diagonal included. */
+            int lo = (int)out->row_start[r];
+            int hi = (int)out->row_start[r + 1] - 1;
+            bool found = false;
+            while (lo <= hi) {
+                int mid = (lo + hi) / 2;
+                if      (out->col[mid] == c) { out->data[mid] = M.data[k]; found = true; break; }
+                else if (out->col[mid] <  c) lo = mid + 1;
+                else                         hi = mid - 1;
+            }
+            ASSERT_ALWAYS(found);
+        }
+    }
 }

@@ -10,7 +10,8 @@
 
 NavierStokesSolver::NavierStokesSolver(const Mesh &m, Profiler *profiler,
 				       LinearSolverKind backend, double tol,
-				       size_t iter_max)
+				       size_t iter_max,
+				       CholeskyOrderingKind ordering)
     : m(m), N(m.vertex_count()), omega(N), Momega(N), psi(N), r(N), p(N), Ap(N)
 {
 	/* Assigned here rather than in the initializer list : these members are
@@ -20,6 +21,7 @@ NavierStokesSolver::NavierStokesSolver(const Mesh &m, Profiler *profiler,
 	this->backend = backend;
 	this->tol = tol;
 	this->iter_max = iter_max;
+	this->cholesky_ordering = ordering;
 
 	{
 		ProfileSection section(profiler, "assembly");
@@ -61,7 +63,8 @@ LinearSolver *NavierStokesSolver::make_solver(CSRMatrix *A)
 		 * update_vort_solver() rebuild to make them take effect. */
 		solver = new CGSolver(tol, (int)iter_max, profiler);
 	} else {
-		solver = new SparseCholeskySolver(A, profiler);
+		solver = new SparseCholeskySolver(A, cholesky_ordering,
+						  profiler);
 	}
 	/* Cheap for CG, this is where the factorization happens for Cholesky. */
 	solver->initialize(A);

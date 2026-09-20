@@ -1,7 +1,10 @@
 #include "cholesky.h"
 
-SparseCholeskySolver::SparseCholeskySolver(CSRMatrix* A, Profiler* profiler)
-    : LinearSolver(profiler), symbolic{A}, factorization{A}
+SparseCholeskySolver::SparseCholeskySolver(CSRMatrix* A,
+                                           CholeskyOrderingKind ordering,
+                                           Profiler* profiler)
+    : LinearSolver(profiler), symbolic{A}, factorization{A},
+      orderingKind{ordering}
 {
 
 }
@@ -9,13 +12,41 @@ CSRMatrix* SparseCholeskySolver::getFactor() {
     return this->factor;
 }
 
+void SparseCholeskySolver::release() {
+    delete factor;     factor     = nullptr;
+    delete factor_T;   factor_T   = nullptr;
+    delete patternL;   patternL   = nullptr;
+    delete patternL_T; patternL_T = nullptr;
+}
+
 void SparseCholeskySolver::initialize(CSRMatrix* A) {
     ProfileSection section(profiler, "cholesky initialize");
 
+    /* initialize() may called whenever A changes */
+    release();
+
+    /* What is actually factorized : A itself, or its permutation. */
+    CSRMatrix* target = A;
     {
         ProfileStep step(profiler, "ordering");
-        ordering.order();
+        if (orderingKind == CHOLESKY_ORDERING_NESTED) {
+            ordering.setMatrix(A);
+            ordering.order();
+            perm = ordering.permutation();
+            /* P A P^T, values included : the symbolic and numeric phases
+             * below then know nothing about the permutation, and only solve()
+             * has to undo it. */
+            ordering.applyToMatrix(*A, &permPattern, &permA);
+            target = &permA;
+
+            permRhs.resize(A->rows);
+            permSol.resize(A->rows);
+        }
     }
+
+    /* Point the two phases at whichever matrix was selected above. */
+    symbolic      = SparseCholeskySymbolic(target);
+    factorization = SparseCholeskyFactorization(target);
 
     patternL   = new CSRPattern();
     patternL_T = new CSRPattern();
@@ -69,9 +100,7 @@ void SparseCholeskySolver::initialize(CSRMatrix* A) {
     }
 }
 
-void SparseCholeskySolver::solve(double *__restrict x, const double *__restrict b) {
-    ProfileSection section(profiler, "cholesky solve");
-
+void SparseCholeskySolver::substitute(double *__restrict x, const double *__restrict b) {
     // 1. Forward substitution of Ly=b
     ProfileStep forward(profiler, "forward substitution (L y = b)");
     TArray<double> y(factor->rows);
@@ -101,9 +130,32 @@ void SparseCholeskySolver::solve(double *__restrict x, const double *__restrict 
     }
 }
 
+void SparseCholeskySolver::solve(double *__restrict x, const double *__restrict b) {
+    ProfileSection section(profiler, "cholesky solve");
+
+    if (orderingKind == CHOLESKY_ORDERING_NATURAL) {
+        substitute(x, b);
+        return;
+    }
+
+    /* The factor is that of P A P^T, so the right hand side has to enter the
+     * permuted numbering and the solution has to come back out of it :
+     *
+     *      (P A P^T) (P x) = P b
+     *
+     * with perm[i] the new index of the old index i. */
+    uint32_t n = (uint32_t)factor->rows;
+    {
+        ProfileStep step(profiler, "permute rhs");
+        for (uint32_t i = 0; i < n; i++) permRhs[perm[i]] = b[i];
+    }
+
+    substitute(permSol.data, permRhs.data);
+
+    ProfileStep step(profiler, "unpermute solution");
+    for (uint32_t i = 0; i < n; i++) x[i] = permSol[perm[i]];
+}
+
 SparseCholeskySolver::~SparseCholeskySolver() {
-    delete this->factor;
-    delete this->factor_T;
-    delete this->patternL;
-    delete this->patternL_T;
+    release();
 }

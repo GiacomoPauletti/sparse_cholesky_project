@@ -12,7 +12,8 @@ NavierStokesSolver::NavierStokesSolver(const Mesh &m, Profiler *profiler)
 #else
 NavierStokesSolver::NavierStokesSolver(const Mesh &m, Profiler *profiler,
 				       LinearSolverKind backend, double tol,
-				       size_t iter_max)
+				       size_t iter_max,
+				       CholeskyOrderingKind ordering)
 #endif
 	: m(m)
 	, N(m.vertex_count())
@@ -28,6 +29,7 @@ NavierStokesSolver::NavierStokesSolver(const Mesh &m, Profiler *profiler,
 	this->backend = backend;
 	this->tol = tol;
 	this->iter_max = iter_max;
+	this->cholesky_ordering = ordering;
 #endif
 #if USE_FEM_MATRIX
 	build_P1_mass_matrix(m, M);
