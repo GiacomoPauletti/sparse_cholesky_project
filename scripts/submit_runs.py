@@ -119,7 +119,7 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="re-run combinations whose report already exists")
     ap.add_argument("--bin", default=DEFAULT_BIN,
-                    help="path to profile_NS (only used by --local)")
+                    help="path to profile_NS, in both modes")
     args = ap.parse_args()
 
     os.makedirs(RUNS_DIR, exist_ok=True)
@@ -147,17 +147,22 @@ def main():
                   f"steps={steps:<4} -> {os.path.basename(out)}")
         return
 
+    # Checked up front in both modes : failing here beats discovering it from
+    # 79 job scripts that each died on their first line.
+    if not os.access(args.bin, os.X_OK):
+        print(f"profile_NS not found or not executable at {args.bin}")
+        print("build it first, or point --bin at it :")
+        print("  cmake --build build/release --target profile_NS")
+        print("  python3 scripts/submit_runs.py --bin /path/to/profile_NS")
+        sys.exit(1)
+    binary = os.path.abspath(args.bin)
+
     if args.local:
-        if not os.access(args.bin, os.X_OK):
-            print(f"profile_NS not found or not executable at {args.bin}")
-            print("build it first :")
-            print("  cmake --build build/release --target profile_NS")
-            sys.exit(1)
         for i, (n, solver, tol, steps, ordering, out) in enumerate(todo, 1):
             print(f"[{i}/{len(todo)}] n={n} {solver} {ordering} tol={tol} "
                   f"steps={steps}", flush=True)
             res = subprocess.run(
-                [args.bin, str(n), solver, tol, str(steps), out, ordering],
+                [binary, str(n), solver, tol, str(steps), out, ordering],
                 stdout=subprocess.DEVNULL)
             if res.returncode != 0:
                 print(f"  failed (exit {res.returncode})")
@@ -166,12 +171,17 @@ def main():
         if not os.access(SLURM_SCRIPT, os.X_OK):
             print(f"{SLURM_SCRIPT} is not executable (chmod +x it).")
             sys.exit(1)
+        # slurm_seq.sh resolves the binary on its own, defaulting to
+        # ./profile_NS relative to the directory it is called from. Hand it
+        # our --bin through the environment so that this script stays the
+        # single place where the path is configured, whichever mode is used.
+        env = dict(os.environ, PROFILE_NS=binary)
         for n, solver, tol, steps, ordering, out in todo:
             print(f"submitting n={n:<3} {solver:<8} {ordering:<8} "
                   f"tol={tol:<6} steps={steps:<4}", flush=True)
             res = subprocess.run(
                 [SLURM_SCRIPT, str(n), solver, tol, str(steps), out,
-                 ordering])
+                 ordering], env=env)
             if res.returncode != 0:
                 print(f"  submission failed")
                 sys.exit(1)
