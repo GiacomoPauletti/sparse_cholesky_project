@@ -10,14 +10,17 @@
  * which makes the numbers useless.
  *
  * Syntax :
- *      profile_NS [n] [cholesky|cg] [tol] [steps]
+ *      profile_NS [n] [cholesky|cg] [tol] [steps] [out]
  *
  *      n      : subdivision level of the sphere         (default 16)
  *      solver : cholesky (direct) or cg (iterative)     (default cholesky)
  *      tol    : relative residual target, CG only       (default 1e-8)
  *      steps  : number of time steps to profile         (default 100)
+ *      out    : report file                             (default performance.txt)
  *
- * tol is accepted and ignored by the Cholesky backend, which is direct.
+ * tol is accepted and ignored by the Cholesky backend, which is direct. The
+ * out argument exists for parameter sweeps : several runs sharing a working
+ * directory would otherwise overwrite each other's report.
  */
 
 #include <math.h>
@@ -40,11 +43,12 @@ static const double DEFAULT_TOL = 1e-8;
 static const int DEFAULT_STEPS = 100;
 static const int ITER_MAX = 20000;
 
-static const char *PERF_PATH = "performance.txt";
+static const char *DEFAULT_PERF_PATH = "performance.txt";
 
 static void syntax(const char *prg_name)
 {
-	printf("Syntax : %s [n] [cholesky|cg] [tol] [steps]\n", prg_name);
+	printf("Syntax : %s [n] [cholesky|cg] [tol] [steps] [out]\n",
+	       prg_name);
 	printf("         n      : sphere subdivision level     (default %d)\n",
 	       DEFAULT_SUBDIV);
 	printf("         solver : cholesky or cg              (default "
@@ -53,6 +57,8 @@ static void syntax(const char *prg_name)
 	       DEFAULT_TOL);
 	printf("         steps  : number of time steps        (default %d)\n",
 	       DEFAULT_STEPS);
+	printf("         out    : report file                 (default %s)\n",
+	       DEFAULT_PERF_PATH);
 }
 
 /* Mirrors rescale_and_recenter_mesh() of test_navier_stokes.cpp, so that the
@@ -96,6 +102,7 @@ int main(int argc, char **argv)
 	LinearSolverKind backend = SOLVER_CHOLESKY;
 	double tol = DEFAULT_TOL;
 	int steps = DEFAULT_STEPS;
+	const char *perf_path = DEFAULT_PERF_PATH;
 
 	if (argc > 1) {
 		if (strcmp(argv[1], "-h") == 0 ||
@@ -137,6 +144,9 @@ int main(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 	}
+	if (argc > 5) {
+		perf_path = argv[5];
+	}
 
 	const char *backend_name =
 	    (backend == SOLVER_CG) ? "conjugate gradient" : "cholesky";
@@ -163,6 +173,23 @@ int main(int argc, char **argv)
 	rescale_and_recenter_mesh(mesh);
 	profiler.endStep();
 	profiler.endSection();
+
+	/* Recorded in the report so that a sweep of report files can be
+	 * compared without having to guess the problem size from the file
+	 * name. Triangles = 12 * n^2 and DoF = 6 * n^2 + 2 for a sphere
+	 * obtained by subdividing each face of a cube into n x n quads, but
+	 * the measured values are written rather than the formula. */
+	profiler.setInfo("sphere subdivision", (size_t)subdiv);
+	profiler.setInfo("elements (triangles)", mesh.triangle_count());
+	profiler.setInfo("vertices (DoF)", mesh.vertex_count());
+	profiler.setInfo("solver", backend_name);
+	if (backend == SOLVER_CG) {
+		profiler.setInfo("tolerance", tol);
+		profiler.setInfo("max iterations", (size_t)ITER_MAX);
+	}
+	profiler.setInfo("nu", NU);
+	profiler.setInfo("dt", DT);
+	profiler.setInfo("time steps", (size_t)steps);
 
 	/**********************************************************************
 	 * Assembly and solver setup, both profiled from inside the solver.
@@ -192,23 +219,52 @@ int main(int argc, char **argv)
 	 * at the first step only : its setup shows up with a single call, while
 	 * the solve lines show `steps` of them.
 	 *********************************************************************/
+	size_t stream_iters = 0;
+	size_t vort_iters = 0;
+
 	profiler.beginSection("time loop");
 	for (int i = 0; i < steps; ++i) {
 		solver.time_step(DT, NU);
+		stream_iters += solver.stream_iter;
+		vort_iters += solver.vort_iter;
 	}
 	profiler.endSection();
 
-	if (backend == SOLVER_CG) {
-		printf("CG iterations of the last step : %zu (psi), %zu "
-		       "(omega)\n\n",
-		       solver.stream_iter, solver.vort_iter);
+	if (backend == SOLVER_CG && steps > 0) {
+		/* Averaged over the run : the first step starts from psi = 0
+		 * and needs noticeably more iterations than the later ones,
+		 * which warm start from the previous solution. */
+		double avg_stream = (double)stream_iters / steps;
+		double avg_vort = (double)vort_iters / steps;
+		profiler.setInfo("cg iterations per psi solve", avg_stream);
+		profiler.setInfo("cg iterations per omega solve", avg_vort);
+		printf("CG iterations per step : %.1f (psi), %.1f (omega)\n\n",
+		       avg_stream, avg_vort);
+	}
+
+	/* Fill in : the number of nonzeros the factor carries compared to the
+	 * operator it came from. This is the memory side of the direct method,
+	 * which a timing alone does not show. */
+	if (backend == SOLVER_CHOLESKY) {
+		SparseCholeskySolver *chol =
+		    dynamic_cast<SparseCholeskySolver *>(solver.stream_solver);
+		if (chol && chol->getFactor()) {
+			profiler.setInfo("nnz(A)", (size_t)solver.Spin.nnz);
+			profiler.setInfo("nnz(L)",
+					 (size_t)chol->getFactor()->nnz);
+			printf("nnz(A) : %zu, nnz(L) : %zu (fill in x%.2f)\n\n",
+			       (size_t)solver.Spin.nnz,
+			       (size_t)chol->getFactor()->nnz,
+			       (double)chol->getFactor()->nnz /
+				   (double)solver.Spin.nnz);
+		}
 	}
 
 	profiler.report(stdout);
-	if (!profiler.dump(PERF_PATH)) {
+	if (!profiler.dump(perf_path)) {
 		return EXIT_FAILURE;
 	}
-	printf("\nWrote %s\n", PERF_PATH);
+	printf("\nWrote %s\n", perf_path);
 
 	return EXIT_SUCCESS;
 }

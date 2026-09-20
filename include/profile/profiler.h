@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 /******************************************************************************
@@ -82,8 +83,17 @@ class Profiler {
 	void endAll();
 
 	/* Drops every recorded timing and restarts the root timer. Handy to
-	 * discard a warmup phase. */
+	 * discard a warmup phase. Recorded info lines (see setInfo) survive. */
 	void reset();
+
+	/* Records a "key : value" line, printed in the header of the report.
+	 * This is what makes a report file self describing : a collection of
+	 * performance.txt gathered from a parameter sweep is only comparable
+	 * if each one states the problem size it was measured on. Setting the
+	 * same key twice overwrites it, and insertion order is preserved. */
+	void setInfo(const char *key, const char *value);
+	void setInfo(const char *key, double value);
+	void setInfo(const char *key, size_t value);
 
 	/* Writes the report. Returns false if the file could not be opened.
 	 * dump() does not stop the profiler : timers still open are reported
@@ -129,6 +139,7 @@ class Profiler {
 	double selfMs(int node) const;
 
 	std::string name;
+	std::vector<std::pair<std::string, std::string>> info;
 	std::vector<Node> nodes; /* nodes[0] is the implicit root */
 	std::vector<Frame> stack;
 	int64_t root_start_ns = 0;

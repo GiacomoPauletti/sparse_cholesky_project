@@ -19,6 +19,32 @@ Profiler::Profiler(const char *title)
 	reset();
 }
 
+void Profiler::setInfo(const char *key, const char *value)
+{
+	std::string k = key ? key : "?";
+	for (size_t i = 0; i < info.size(); ++i) {
+		if (info[i].first == k) {
+			info[i].second = value ? value : "";
+			return;
+		}
+	}
+	info.push_back(std::make_pair(k, std::string(value ? value : "")));
+}
+
+void Profiler::setInfo(const char *key, double value)
+{
+	char buf[64];
+	snprintf(buf, sizeof(buf), "%g", value);
+	setInfo(key, buf);
+}
+
+void Profiler::setInfo(const char *key, size_t value)
+{
+	char buf[64];
+	snprintf(buf, sizeof(buf), "%zu", value);
+	setInfo(key, buf);
+}
+
 void Profiler::reset()
 {
 	nodes.clear();
@@ -182,6 +208,10 @@ void Profiler::report(void *stream) const
 		   "=====================================\n");
 	fprintf(f, " %s\n", name.c_str());
 	fprintf(f, " wall clock : %.3f ms\n", root_ms);
+	for (size_t i = 0; i < info.size(); ++i) {
+		fprintf(f, " %s : %s\n", info[i].first.c_str(),
+			info[i].second.c_str());
+	}
 	fprintf(f, "==========================================================="
 		   "=====================================\n");
 	fprintf(f, " total : cumulated time of all the calls to a node.\n");

@@ -20,9 +20,15 @@ void SparseCholeskySolver::initialize(CSRMatrix* A) {
     patternL   = new CSRPattern();
     patternL_T = new CSRPattern();
     {
-        /* buildPatterns() builds the elimination tree on first call, so the
-         * tree construction is measured here as part of the symbolic phase. */
-        ProfileStep step(profiler, "symbolic");
+        /* buildPatterns() would build the elimination tree itself on its first
+         * call. Building it explicitly here separates the two halves of the
+         * symbolic phase : the tree, and the row patterns of L and L^T
+         * deduced from it. The second call is a no-op (isTreeBuilt). */
+        ProfileStep step(profiler, "elimination tree");
+        symbolic.buildTree();
+    }
+    {
+        ProfileStep step(profiler, "row patterns");
         symbolic.buildPatterns(patternL, patternL_T);
     }
 
