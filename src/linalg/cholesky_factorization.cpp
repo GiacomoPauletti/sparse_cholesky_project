@@ -1,8 +1,16 @@
 #include "cholesky.h"
 #include "sys_utils.h"
 
+#include <atomic>
 #include <cmath>
 #include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#else
+static int omp_get_max_threads() { return 1; }
+static int omp_get_thread_num() { return 0; }
+#endif
 
 
 // ===================== COMMON FACTORIZATION STATE =======================
@@ -164,12 +172,12 @@ MultifrontalSparseCholeskyFactorization::MultifrontalSparseCholeskyFactorization
 {
 }
 
-CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
-    /* Pseudocode
-     * do k = 0:n-1
-     *    Assemble F_k = [a_kk, a_*k^T ; a_*k, 0] (+) V_{c_1} (+) ... (+) V_{c_r}
-     *    One Cholesky step on F_k -> L(:,k) and V_k
-     * */
+/* Pseudocode
+ * do k = 0:n-1
+ *    Assemble F_k = [a_kk, a_*k^T ; a_*k, 0] (+) V_{c_1} (+) ... (+) V_{c_r}
+ *    One Cholesky step on F_k -> L(:,k) and V_k
+ * setup() is everything before the loop, processNode(k) is one iteration. */
+void MultifrontalSparseCholeskyFactorization::setup() {
     ASSERT(A != nullptr);
     ASSERT_ALWAYS(A->rows == A->cols);
     ASSERT(patternL != nullptr);
@@ -180,7 +188,7 @@ CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
     const size_t   nnz = patternL->nnz;
 
     // === 1. Sparsity pattern setup
-    CSRMatrix* L = new CSRMatrix();
+    L = new CSRMatrix();
     L->symmetric = false;
     L->rows      = n;
     L->cols      = n;
@@ -204,7 +212,7 @@ CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
      * contiguous and ascending in row index. (Entries above the diagonal, if
      * A happens to store them, are dropped : the lower triangle is all the
      * factorization ever needs.) */
-    TArray<uint32_t> atStart(n + 1, 0);
+    atStart.assign(n + 1, 0);
     size_t nnzLower = 0;
     for (uint32_t i = 0; i < n; i++) {
         for (uint32_t p = A->row_start[i]; p < A->row_start[i + 1]; p++) {
@@ -223,8 +231,8 @@ CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
         }
         atStart[n] = acc;
     }
-    TArray<uint32_t> atRow(nnzLower);
-    TArray<double>   atVal(nnzLower);
+    atRow.resize(nnzLower);
+    atVal.resize(nnzLower);
     {
         TArray<uint32_t> cursor(n);
         for (uint32_t j = 0; j < n; j++) cursor[j] = atStart[j];
@@ -245,7 +253,7 @@ CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
      * entry of column k -- the elimination tree is already in patternL_T, so
      * nothing has to be passed in from the symbolic phase. A column with no
      * off-diagonal entry is a root. */
-    std::vector<uint32_t> childStart(n + 1, 0);
+    childStart.assign(n + 1, 0);
     for (uint32_t k = 0; k < n; k++)
         if (rsT[k + 1] - rsT[k] > 1) childStart[colT[rsT[k] + 1]]++;
     {
@@ -257,7 +265,7 @@ CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
         }
         childStart[n] = acc;
     }
-    std::vector<uint32_t> childList(childStart[n]);
+    childList.resize(childStart[n]);
     {
         std::vector<uint32_t> cursor(childStart.begin(), childStart.end());
         for (uint32_t k = 0; k < n; k++)
@@ -272,8 +280,8 @@ CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
      * relIdx is indexed exactly like patternL_T : the map of V_k lives at
      * positions rsT[k]+1 .. rsT[k+1]-1, and the unused slot rsT[k] keeps the
      * addressing trivial. */
-    TArray<uint32_t> relIdx(nnz);
-    uint32_t maxM = 0;
+    relIdx.resize(nnz);
+    maxM = 0;
     for (uint32_t k = 0; k < n; k++) {
         uint32_t m = rsT[k + 1] - rsT[k];
         if (m > maxM) maxM = m;
@@ -289,87 +297,164 @@ CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
         }
     }
 
-    /* 2.4 Scratch, allocated once at the largest front rather than per
-     * column. The generated elements own their storage instead, since they
-     * have to survive until their parent is eliminated. */
-    TArray<double> scratch((size_t)maxM * maxM);
-    TArray<double> L_k(maxM);
     /* V[j] is the generated element of j, alive from the step that produced
-     * it to the step that consumes it. Freed as soon as it has been extend
-     * added, so only the elements of currently open branches are resident.
-     * (With a postordered elimination tree these would be exactly the top of
-     * a stack; the numbering here is only guaranteed topological.) */
-    std::vector<GeneratedElement*> V(n, nullptr);
+     * it to the step that consumes it, which frees it. */
+    V.assign(n, nullptr);
+}
 
-    // === 3. Factorization
+void MultifrontalSparseCholeskyFactorization::processNode(uint32_t k,
+                                                          double* scratch,
+                                                          double* L_k) {
+    const uint32_t* rsT  = patternL_T->row_start.data;
+    const uint32_t* colT = patternL_T->col.data;
+
+    // === 3.1 F_k setup. Dense and symmetric : no pattern, lower half only
+    uint32_t n_rows_k = rsT[k + 1] - rsT[k];   // n_rows_k = |col(k)|
+    ASSERT(colT[rsT[k]] == k);                 // the diagonal comes first
+    SymFrontMatrix F_k(n_rows_k, scratch);
+    F_k.zeroLower();
+
+    // === 3.2 Assemble F_k
+    /* -- Column k of A goes into the front's first column. Only the first
+     *    column : an entry A(k_i, k_j) with both indices > k is assembled
+     *    at ITS own front, not here.
+     *    struct(A(:,k)) is a subset of the front's rows, and both are
+     *    ascending, so a single forward walk places every value. */
+    uint32_t t = 0;
+    for (uint32_t q = atStart[k]; q < atStart[k + 1]; q++) {
+        uint32_t i = atRow[q];   // i >= k
+        while (t < n_rows_k && colT[rsT[k] + t] < i) t++;
+        ASSERT(t < n_rows_k && colT[rsT[k] + t] == i);
+        F_k.at(t, 0) += atVal[q];
+    }
+
+    // -- extend add with the children's generated elements
+    for (uint32_t c = childStart[k]; c < childStart[k + 1]; c++) {
+        uint32_t j = childList[c];
+        ASSERT(V[j] != nullptr);
+        V[j]->extendAdd(F_k);
+        delete V[j];          // consumed : nothing will ever read it again
+        V[j] = nullptr;
+    }
+
+    // === 3.3 One step of Cholesky
+    double diag = F_k.at(0, 0);
+    ASSERT_ALWAYS(diag > 0.0);
+    L_k[0] = std::sqrt(diag);
+    for (uint32_t i = 1; i < n_rows_k; i++)
+        L_k[i] = F_k.at(i, 0) / L_k[0];
+
+    // === 3.4 V_k = F_k[1:,1:] - L_k[1:] L_k[1:]^T
+    /* Symmetric rank 1 update, lower triangle only : this is dsyr with
+     * uplo = 'L', written out by hand since the project links no BLAS. */
+    if (n_rows_k > 1) {
+        uint32_t mv = n_rows_k - 1;
+        GeneratedElement* V_k = new GeneratedElement(mv, &relIdx[rsT[k] + 1]);
+        for (uint32_t j = 0; j < mv; j++) {
+            double lj = L_k[j + 1];
+            for (uint32_t i = j; i < mv; i++)
+                V_k->at(i, j) = F_k.at(i + 1, j + 1) - L_k[i + 1] * lj;
+        }
+        V[k] = V_k;
+    }
+
+    // === 3.5 Scatter L_k into L
+    /* L is row major but L_k is a column, so each value has to find its
+     * slot in a different row of L. cscToCsr, built with the patterns,
+     * makes that one indirect store per entry instead of a binary
+     * search. */
+    for (uint32_t i = 0; i < n_rows_k; i++)
+        L->data[(*cscToCsr)[rsT[k] + i]] = L_k[i];
+}
+
+CSRMatrix* MultifrontalSparseCholeskyFactorization::factorize() {
+    setup();
+    /* One front buffer, sized for the largest front, reused by every column. */
+    std::vector<double> scratch((size_t)maxM * maxM + maxM);
+    for (uint32_t k = 0; k < A->rows; k++)
+        processNode(k, scratch.data(), scratch.data() + (size_t)maxM * maxM);
+    /* Each generated element is consumed by its parent; roots produce none. */
+    for (GeneratedElement* v : V) ASSERT(v == nullptr);
+    return L;
+}
+
+
+
+// ===================== PARALLEL MULTIFRONTAL SPARSE CHOLESKY FACTORIZATION =======================
+
+ParMultifrontalSparseCholeskyFactorization::ParMultifrontalSparseCholeskyFactorization(CSRMatrix* A)
+    : MultifrontalSparseCholeskyFactorization{A}
+{
+}
+
+CSRMatrix* ParMultifrontalSparseCholeskyFactorization::factorize() {
+    setup();
+    const uint32_t n = A->rows;
+    const uint32_t* rsT  = patternL_T->row_start.data;
+    const uint32_t* colT = patternL_T->col.data;
+    const uint32_t NONE = UINT32_MAX;
+    auto parent = [&](uint32_t k) { return rsT[k + 1] - rsT[k] > 1 ? colT[rsT[k] + 1] : NONE; };
+
+    /* Subtree work, m_k^2 per front. parent(k) > k, so one ascending pass. */
+    std::vector<double> sub(n, 0.0);
+    double W = 0.0;
     for (uint32_t k = 0; k < n; k++) {
-        // === 3.1 F_k setup. Dense and symmetric : no pattern, lower half only
-        uint32_t n_rows_k = rsT[k + 1] - rsT[k];   // n_rows_k = |col(k)|
-        ASSERT(colT[rsT[k]] == k);                 // the diagonal comes first
-        SymFrontMatrix F_k(n_rows_k, scratch.data);
-        F_k.zeroLower();
+        double m = rsT[k + 1] - rsT[k];
+        sub[k] += m * m;
+        W += m * m;
+        if (parent(k) != NONE) sub[parent(k)] += sub[k];
+    }
 
-        // === 3.2 Assemble F_k
-        /* -- Column k of A goes into the front's first column. Only the first
-         *    column : an entry A(k_i, k_j) with both indices > k is assembled
-         *    at ITS own front, not here.
-         *    struct(A(:,k)) is a subset of the front's rows, and both are
-         *    ascending, so a single forward walk places every value. */
-        uint32_t t = 0;
-        for (uint32_t q = atStart[k]; q < atStart[k + 1]; q++) {
-            uint32_t i = atRow[q];   // i >= k
-            while (t < n_rows_k && colT[rsT[k] + t] < i) t++;
-            ASSERT(t < n_rows_k && colT[rsT[k] + t] == i);
-            F_k.at(t, 0) += atVal[q];
-        }
+    /* A node is small if its whole subtree is one task's worth of work (or it
+     * is a leaf). owner[k] = root of the task processing k; parents first, so
+     * descending k. Nodes above the cut own themselves. */
+    const int nthreads = omp_get_max_threads();
+    const double T = W / (8.0 * nthreads);
+    auto small = [&](uint32_t k) { return sub[k] <= T || childStart[k] == childStart[k + 1]; };
+    std::vector<uint32_t> owner(n);
+    for (uint32_t k = n; k-- > 0; ) {
+        uint32_t p = parent(k);
+        owner[k] = (p != NONE && small(k) && small(p)) ? owner[p] : k;
+    }
 
-        // -- extend add with the children's generated elements
-        for (uint32_t c = childStart[k]; c < childStart[k + 1]; c++) {
-            uint32_t j = childList[c];
-            ASSERT(V[j] != nullptr);
-            V[j]->extendAdd(F_k);
-            delete V[j];          // consumed : nothing will ever read it again
-            V[j] = nullptr;
-        }
+    /* Nodes of each task, ascending so children come first (counting sort). */
+    std::vector<uint32_t> first(n + 1, 0), order(n);
+    for (uint32_t k = 0; k < n; k++) first[owner[k] + 1]++;
+    for (uint32_t k = 0; k < n; k++) first[k + 1] += first[k];
+    {
+        std::vector<uint32_t> cur(first.begin(), first.end() - 1);
+        for (uint32_t k = 0; k < n; k++) order[cur[owner[k]]++] = k;
+    }
 
-        // === 3.3 One step of Cholesky
-        double diag = F_k.at(0, 0);
-        ASSERT_ALWAYS(diag > 0.0);
-        L_k[0] = std::sqrt(diag);
-        for (uint32_t i = 1; i < n_rows_k; i++)
-            L_k[i] = F_k.at(i, 0) / L_k[0];
+    /* Children still to finish, for the nodes above the cut. acq_rel makes
+     * each child's V visible to the thread that processes the parent. */
+    std::vector<std::atomic<uint32_t>> pending(n);
+    for (uint32_t k = 0; k < n; k++)
+        pending[k].store(childStart[k + 1] - childStart[k], std::memory_order_relaxed);
 
-        // === 3.4 V_k = F_k[1:,1:] - L_k[1:] L_k[1:]^T
-        /* Symmetric rank 1 update, lower triangle only : this is dsyr with
-         * uplo = 'L', written out by hand since the project links no BLAS. */
-        if (n_rows_k > 1) {
-            uint32_t mv = n_rows_k - 1;
-            GeneratedElement* V_k = new GeneratedElement(mv, &relIdx[rsT[k] + 1]);
-            for (uint32_t j = 0; j < mv; j++) {
-                double lj = L_k[j + 1];
-                for (uint32_t i = j; i < mv; i++)
-                    V_k->at(i, j) = F_k.at(i + 1, j + 1) - L_k[i + 1] * lj;
+    std::vector<std::vector<double>> buf(nthreads);
+    #pragma omp parallel
+    #pragma omp single
+    for (uint32_t r = 0; r < n; r++) {
+        if (owner[r] != r || !small(r)) continue;
+        #pragma omp task firstprivate(r)
+        {
+            /* Tied task without scheduling points : the thread's buffer is ours. */
+            std::vector<double>& b = buf[omp_get_thread_num()];
+            if (b.empty()) b.resize((size_t)maxM * maxM + maxM);
+            double* scratch = b.data();
+            double* L_k = scratch + (size_t)maxM * maxM;
+
+            for (uint32_t i = first[r]; i < first[r + 1]; i++)
+                processNode(order[i], scratch, L_k);
+            /* Last child in climbs into the parent. */
+            for (uint32_t k = r, p; (p = parent(k)) != NONE; k = p) {
+                if (pending[p].fetch_sub(1, std::memory_order_acq_rel) != 1) break;
+                processNode(p, scratch, L_k);
             }
-            V[k] = V_k;
         }
-
-        // === 3.5 Scatter L_k into L
-        /* L is row major but L_k is a column, so each value has to find its
-         * slot in a different row of L. cscToCsr, built with the patterns,
-         * makes that one indirect store per entry instead of a binary
-         * search. */
-        for (uint32_t i = 0; i < n_rows_k; i++)
-            L->data[(*cscToCsr)[rsT[k] + i]] = L_k[i];
     }
 
-    // === 4. Teardown
-    /* Every generated element is consumed by its parent, and a node without a
-     * parent produces none (no parent <=> the column has no off diagonal
-     * entry <=> n_rows_k == 1), so nothing should be left. */
-    for (uint32_t k = 0; k < n; k++) {
-        ASSERT(V[k] == nullptr);
-        delete V[k];
-    }
-
+    for (GeneratedElement* v : V) ASSERT(v == nullptr);
     return L;
 }

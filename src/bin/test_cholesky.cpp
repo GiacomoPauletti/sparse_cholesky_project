@@ -310,6 +310,7 @@ int main() {
     SparseCholeskySymbolic symbolic(&A);
     UplookingSparseCholeskyFactorization factorization(&A);
     MultifrontalSparseCholeskyFactorization mfFactorization(&A);
+    ParMultifrontalSparseCholeskyFactorization pmfFactorization(&A);
 
     std::cout << "==================== 1. METATEST TESTING =======================" << std::endl;
     std::cout << "That is, checking that the test is correct" << std::endl;
@@ -379,6 +380,14 @@ int main() {
         std::cout << ">>> OUTCOME: Succeded Multifrontal Factorization test" << std::endl;
     }
     delete mfFactor;
+
+    std::cout << "-- parallel multifrontal --" << std::endl;
+    pmfFactorization.setPatterns(patternL, patternL_T, &cscToCsr);
+    CSRMatrix* pmfFactor = pmfFactorization.factorize();
+    std::cout << (check_matrix(pmfFactor, &expectedL)
+                  ? ">>> OUTCOME: Succeded Parallel Multifrontal Factorization test"
+                  : ">>> OUTCOME: Failed Parallel Multifrontal Factorization test") << std::endl;
+    delete pmfFactor;
 
     std::cout << "-- up-looking --" << std::endl;
     factorization.setPatternL(patternL);

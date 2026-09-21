@@ -47,7 +47,9 @@ void SparseCholeskySolver::initialize(CSRMatrix* A) {
 
     /* Point the two phases at whichever matrix was selected above. */
     symbolic = SparseCholeskySymbolic(target);
-    if (factorizationKind == CHOLESKY_FACTORIZATION_MULTIFRONTAL)
+    if (factorizationKind == CHOLESKY_FACTORIZATION_PAR_MULTIFRONTAL)
+        factorization.reset(new ParMultifrontalSparseCholeskyFactorization(target));
+    else if (factorizationKind == CHOLESKY_FACTORIZATION_MULTIFRONTAL)
         factorization.reset(new MultifrontalSparseCholeskyFactorization(target));
     else
         factorization.reset(new UplookingSparseCholeskyFactorization(target));

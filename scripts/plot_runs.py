@@ -19,6 +19,9 @@ Figures
                              up-looking vs multifrontal : how the numerical
                              factorization scales, and by how much the second
                              beats the first
+    7. parallel_scaling.png  parallel multifrontal against mesh size, one curve
+                             per thread count (sweep of submit_runs_par.py,
+                             read from plots/runs_par/)
 
 A Cholesky run is identified by its VARIANT, the (ordering, factorization)
 pair : the two are independent knobs, the ordering deciding how much fill in
@@ -43,6 +46,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
 PLOTS_DIR = os.path.join(ROOT_DIR, "plots")
 RUNS_DIR = os.path.join(PLOTS_DIR, "runs")
+PAR_RUNS_DIR = os.path.join(PLOTS_DIR, "runs_par")
 
 # Cholesky phases of figure 1 : the step name emitted by the instrumentation in
 # cholesky.cpp, and the label to plot it under. "solve" is synthesized below as
@@ -124,6 +128,7 @@ COLORS = {
     "cg 1e-10": "#8c3318",
     "fill in": "#3fa2a6",
 }
+THREAD_RAMP = ["#86b6ef", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 CG_FALLBACK = ["#eb6834", "#c2502a", "#8c3318", "#5c2010"]
 INK = "#0b0b0b"    # titles and axis labels
 MUTED = "#52514e"  # ticks, spines, guide lines -- 7.9:1 on white
@@ -206,14 +211,14 @@ def parse_report(path):
     return info, steps, sections
 
 
-def load_runs():
-    if not os.path.isdir(RUNS_DIR):
+def load_runs(runs_dir=RUNS_DIR):
+    if not os.path.isdir(runs_dir):
         return []
     runs = []
-    for name in sorted(os.listdir(RUNS_DIR)):
+    for name in sorted(os.listdir(runs_dir)):
         if not name.endswith(".txt"):
             continue
-        path = os.path.join(RUNS_DIR, name)
+        path = os.path.join(runs_dir, name)
         info, steps, sections = parse_report(path)
         try:
             run = {
@@ -238,8 +243,10 @@ def load_runs():
         # such line and were all up-looking. profile_NS spells it "up-looking"
         # and "multifrontal" ; anything else is normalized to the former.
         fact = info.get("factorization", "up-looking").strip().lower()
-        fact = "multifrontal" if fact.startswith("multi") else "up-looking"
+        if fact not in ("multifrontal", "parallel multifrontal"):
+            fact = "up-looking"
         run["factorization"] = fact if run["solver"] == "cholesky" else None
+        run["threads"] = int(info.get("threads", 1))
         run["nnz_a"] = int(info["nnz(A)"]) if "nnz(A)" in info else None
         run["nnz_l"] = int(info["nnz(L)"]) if "nnz(L)" in info else None
         run["cg_iter_psi"] = _float(info.get("cg iterations per psi solve"))
@@ -344,7 +351,7 @@ def fit_exponent(xs, ys):
     return (num / den) if den else None
 
 
-def declutter(labels, ax, logy=True):
+def declutter(labels, ax, logy=True, gap=0.042):
     """Push apart labels sharing the right edge of the plot.
 
     A label carrying side="left" is drawn to the left of its anchor instead,
@@ -372,7 +379,7 @@ def declutter(labels, ax, logy=True):
         lo, hi = ymin, ymax
         pos = [e["y"] for e in sorted(labels, key=lambda e: e["y"])]
     labels = sorted(labels, key=lambda e: e["y"])
-    gap = 0.042 * (hi - lo)
+    gap = gap * (hi - lo)  # fraction of the axis height
 
     for i in range(1, len(pos)):
         if pos[i] - pos[i - 1] < gap:
@@ -1011,6 +1018,89 @@ def plot_factorization_scaling(runs):
             print(f"    {dofs[x]:>7} DoF : x{y:.2f}")
 
 
+
+# ---------------------------------------------------------------------------
+# Figure 7 : parallel multifrontal, one curve per thread count
+# ---------------------------------------------------------------------------
+
+def plot_parallel_scaling(runs):
+    """Factorization cost against mesh size per thread count (top) and the
+    speedup over the sequential multifrontal (bottom). The speedup gets its
+    own panel : a 2x gap is barely visible on a log axis spanning decades."""
+    seq = {r["elements"]: phase_cost(r, "factorization") for r in runs
+           if r["factorization"] == "multifrontal"}
+    par = {}
+    for r in runs:
+        if r["factorization"] == "parallel multifrontal":
+            par.setdefault(r["threads"], {})[r["elements"]] = \
+                phase_cost(r, "factorization")
+    par = {t: sorted((x, y) for x, y in d.items() if y) for t, d in par.items()}
+    par = {t: pts for t, pts in par.items() if len(pts) >= 2}
+    if not par:
+        print("figure 7 skipped : need parallel runs at two mesh sizes or more")
+        return
+
+    dofs = {r["elements"]: r["dofs"] for r in runs}
+    all_x = sorted({x for pts in par.values() for x, _ in pts})
+    fig, (ax, rax) = plt.subplots(
+        2, 1, figsize=(9, 7.6), facecolor=SURFACE, sharex=True,
+        gridspec_kw={"height_ratios": [3, 1.35], "hspace": 0.12})
+    style_axes(ax, "Parallel multifrontal factorization : cost against mesh "
+               "size", None, "time of one factorization (ms)",
+               f"nested ordering, OpenMP over the elimination tree   |   "
+               f"{dofs[all_x[0]]} to {dofs[all_x[-1]]} DoF")
+    style_axes(rax, None, "elements (triangles)   [= 12 n\u00b2 at "
+               "subdivision n]", "speedup over\nsequential multifrontal")
+    for a in (ax, rax):
+        a.set_xscale("log")
+    ax.set_yscale("log")
+    rax.axhline(1.0, color=MUTED, linestyle="--", linewidth=0.9, zorder=1)
+
+    labels = []
+    sx = sorted(x for x in seq if seq[x])
+    if len(sx) >= 2:
+        ax.plot(sx, [seq[x] for x in sx], linestyle="--", linewidth=1.4,
+                color=MUTED, zorder=2)
+        labels.append({"x": sx[-1], "y": seq[sx[-1]], "color": MUTED,
+                       "text": "sequential multifrontal"})
+
+    threads = sorted(par)
+    speedups = {}
+    rlabels = []
+    for i, t in enumerate(threads):
+        # Ramp steps spread over the whole range whatever the number of curves.
+        color = THREAD_RAMP[round(i * (len(THREAD_RAMP) - 1)
+                                  / max(1, len(threads) - 1))]
+        px = [x for x, _ in par[t]]
+        py = [y for _, y in par[t]]
+        p = fit_exponent(px, py)
+        name = f"{t} thread{'s' if t > 1 else ''}"
+        ax.plot(px, py, marker="o", markersize=4, linewidth=1.8, color=color,
+                zorder=3)
+        labels.append({"x": px[-1], "y": py[-1], "color": color,
+                       "text": f"{name}  (\u221d E^{p:.2f})" if p else name})
+        common = [x for x in px if seq.get(x)]
+        if common:
+            ry = [seq[x] / dict(par[t])[x] for x in common]
+            speedups[t] = list(zip(common, ry))
+            rax.plot(common, ry, marker="o", markersize=4, linewidth=1.6,
+                     color=color, zorder=3)
+            rlabels.append({"x": common[-1], "y": ry[-1], "color": color,
+                            "text": name})
+
+    ax.set_xlim(all_x[0] * 0.8, all_x[-1] * 5.0)
+    declutter(labels, ax)
+    declutter(rlabels, rax, logy=False, gap=0.12)  # short panel
+    savefig("parallel_scaling.png")
+
+    print("\n  speedup over the sequential multifrontal :")
+    print("    " + f"{'DoF':>8}" + "".join(f"{t:>8}t" for t in threads))
+    for x in sorted({x for v in speedups.values() for x, _ in v}):
+        row = [dict(speedups.get(t, [])).get(x) for t in threads]
+        print("    " + f"{dofs[x]:>8}" + "".join(
+            f"{v:>9.2f}" if v else f"{'-':>9}" for v in row))
+
+
 # ---------------------------------------------------------------------------
 
 def main():
@@ -1045,6 +1135,8 @@ def main():
     plot_fillin(runs)
     plot_cg_iterations(runs)
     plot_factorization_scaling(runs)
+    print()
+    plot_parallel_scaling(load_runs(PAR_RUNS_DIR))
 
 
 if __name__ == "__main__":

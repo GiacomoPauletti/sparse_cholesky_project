@@ -89,6 +89,12 @@ if (USE_OPENMP AND OpenMP_CXX_FOUND)
 	target_compile_options(nanofem PRIVATE -DUSE_OPENMP)
 	target_link_libraries(nanofem PUBLIC OpenMP::OpenMP_CXX)
 endif()
+# For the parallel multifrontal factorization. Leaves the rest serial : the
+# other pragmas are behind USE_OPENMP, which this does not define.
+find_package(OpenMP)
+if (OpenMP_CXX_FOUND)
+	target_link_libraries(nanofem PUBLIC OpenMP::OpenMP_CXX)
+endif()
 ###############################################################################
 
 ###############################################################################

@@ -142,7 +142,10 @@ static void nested_dissection(const std::vector<std::vector<uint32_t>>& adj,
 
     /* Group subset vertices by level, and find the best separator level:
      * minimize its size, subject to keeping the two sides reasonably
-     * balanced (each at least 20% of the subset). */
+     * balanced (each at least 20% of the subset). Level sizes grow away from
+     * the BFS root, so the smallest admissible level sits right at the bound
+     * and splits come out ~80/20 : that caps the elimination tree's
+     * parallelism near 2x (1/3 roughly doubles it, but slowed up-looking). */
     std::vector<std::vector<uint32_t>> byLevel(maxLevel + 1);
     for (uint32_t v : subset) byLevel[level[v]].push_back(v);
 

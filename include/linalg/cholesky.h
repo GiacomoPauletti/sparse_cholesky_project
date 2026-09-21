@@ -129,20 +129,41 @@ class GeneratedElement {
 };
 
 class MultifrontalSparseCholeskyFactorization : public SparseCholeskyFactorization {
+    protected:
+        /* Filled by setup(), read by processNode() */
+        CSRMatrix* L = nullptr;
+        std::vector<uint32_t> atStart, atRow;   // lower triangle of A, by column
+        std::vector<double> atVal;
+        std::vector<uint32_t> childStart, childList; // elimination tree children
+        std::vector<uint32_t> relIdx;           // extend-add maps, indexed like patternL_T
+        uint32_t maxM = 0;                      // largest front order
+        std::vector<GeneratedElement*> V;       // generated elements awaiting their parent
+
+        void setup();
+        /* One front : assemble, factor, hand V_k to the parent, scatter L(:,k).
+         * scratch holds maxM^2 doubles, L_k maxM. Safe to run concurrently on
+         * distinct k once all the children of each k are done. */
+        void processNode(uint32_t k, double* scratch, double* L_k);
     public:
         MultifrontalSparseCholeskyFactorization(CSRMatrix* A);
         CSRMatrix* factorize() override;
 };
 
-/* A ParMultifrontalSparseCholeskyFactorization goes here : the elimination
- * tree's independent subtrees are the parallelism, so it derives from the
- * same base and reuses the same GeneratedElement. */
+/* Multifrontal over OpenMP tasks, the elimination tree as the DAG. The tree is
+ * cut into subtrees of bounded work, one task each; above the cut, the last
+ * child to finish carries on into its parent. */
+class ParMultifrontalSparseCholeskyFactorization : public MultifrontalSparseCholeskyFactorization {
+    public:
+        ParMultifrontalSparseCholeskyFactorization(CSRMatrix* A);
+        CSRMatrix* factorize() override;
+};
 
 /* Which numerical factorization SparseCholeskySolver runs. Both produce the
  * same L, to rounding. */
 enum CholeskyFactorizationKind {
     CHOLESKY_FACTORIZATION_UPLOOKING,    // Algorithm 5.7, one row of L at a time
-    CHOLESKY_FACTORIZATION_MULTIFRONTAL  // one dense front per column of L
+    CHOLESKY_FACTORIZATION_MULTIFRONTAL,     // one dense front per column of L
+    CHOLESKY_FACTORIZATION_PAR_MULTIFRONTAL  // same, OpenMP over the elimination tree
 };
 
 class SparseCholeskySolver : public LinearSolver {

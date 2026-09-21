@@ -11,7 +11,7 @@
  *
  * Syntax :
  *      profile_NS [n] [cholesky|cg] [tol] [steps] [out] [natural|nested]
- *                 [uplooking|multifrontal]
+ *                 [uplooking|multifrontal|parmultifrontal]
  *
  *      n      : subdivision level of the sphere         (default 16)
  *      solver : cholesky (direct) or cg (iterative)     (default cholesky)
@@ -20,6 +20,7 @@
  *      out    : report file                             (default performance.txt)
  *      order  : vertex ordering, Cholesky only          (default natural)
  *      fact   : factorization algorithm, Cholesky only  (default uplooking)
+ *               parmultifrontal uses OMP_NUM_THREADS threads
  *
  * tol is accepted and ignored by the Cholesky backend, which is direct, and
  * order and fact likewise by CG, which never factorizes. order and fact are
@@ -40,6 +41,10 @@
 #include "profiler.h"
 #include "sphere.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 /* Same defaults as the test_NS viewer. */
 static const double DT = 0.002;
 static const double NU = 1e-1;
@@ -54,7 +59,7 @@ static const char *DEFAULT_PERF_PATH = "performance.txt";
 static void syntax(const char *prg_name)
 {
 	printf("Syntax : %s [n] [cholesky|cg] [tol] [steps] [out] "
-	       "[natural|nested] [uplooking|multifrontal]\n", prg_name);
+	       "[natural|nested] [uplooking|multifrontal|parmultifrontal]\n", prg_name);
 	printf("         n      : sphere subdivision level     (default %d)\n",
 	       DEFAULT_SUBDIV);
 	printf("         solver : cholesky or cg              (default "
@@ -67,8 +72,8 @@ static void syntax(const char *prg_name)
 	       DEFAULT_PERF_PATH);
 	printf("         order  : natural or nested           (default "
 	       "natural)\n");
-	printf("         fact   : uplooking or multifrontal   (default "
-	       "uplooking)\n");
+	printf("         fact   : uplooking, multifrontal or parmultifrontal "
+	       "(default uplooking)\n");
 }
 
 /* Mirrors rescale_and_recenter_mesh() of test_navier_stokes.cpp, so that the
@@ -176,6 +181,8 @@ int main(int argc, char **argv)
 			factorization = CHOLESKY_FACTORIZATION_UPLOOKING;
 		} else if (strcmp(argv[7], "multifrontal") == 0) {
 			factorization = CHOLESKY_FACTORIZATION_MULTIFRONTAL;
+		} else if (strcmp(argv[7], "parmultifrontal") == 0) {
+			factorization = CHOLESKY_FACTORIZATION_PAR_MULTIFRONTAL;
 		} else {
 			printf("Unknown factorization '%s'.\n", argv[7]);
 			syntax(argv[0]);
@@ -188,7 +195,9 @@ int main(int argc, char **argv)
 	const char *ordering_name =
 	    (ordering == CHOLESKY_ORDERING_NESTED) ? "nested" : "natural";
 	const char *factorization_name =
-	    (factorization == CHOLESKY_FACTORIZATION_MULTIFRONTAL)
+	    (factorization == CHOLESKY_FACTORIZATION_PAR_MULTIFRONTAL)
+		? "parallel multifrontal"
+	    : (factorization == CHOLESKY_FACTORIZATION_MULTIFRONTAL)
 		? "multifrontal"
 		: "up-looking";
 
@@ -236,6 +245,10 @@ int main(int argc, char **argv)
 		profiler.setInfo("ordering", ordering_name);
 		profiler.setInfo("factorization", factorization_name);
 	}
+#ifdef _OPENMP
+	/* Only the parallel factorization uses them, but recorded for every run. */
+	profiler.setInfo("threads", (size_t)omp_get_max_threads());
+#endif
 	if (backend == SOLVER_CG) {
 		profiler.setInfo("tolerance", tol);
 		profiler.setInfo("max iterations", (size_t)ITER_MAX);
