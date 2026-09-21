@@ -5,7 +5,7 @@
 # This script is NOT itself a batch script : run it directly,
 #
 #       ./slurm_seq.sh [n] [cholesky|cg] [tol] [steps] [out] [natural|nested] \
-#                      [uplooking|multifrontal]
+#                      [uplooking|multifrontal|parmultifrontal]
 #
 # and it submits the job below through sbatch. The batch script is the
 # heredoc at the bottom, fed to sbatch on its standard input, so there is no
@@ -61,10 +61,10 @@ case "$ORDER" in
 esac
 
 case "$FACT" in
-	uplooking | multifrontal) ;;
+	uplooking | multifrontal | parmultifrontal) ;;
 	*)
-		echo "Unknown factorization '$FACT' (expected uplooking or" \
-			"multifrontal)." >&2
+		echo "Unknown factorization '$FACT' (expected uplooking," \
+			"multifrontal or parmultifrontal)." >&2
 		exit 1
 		;;
 esac

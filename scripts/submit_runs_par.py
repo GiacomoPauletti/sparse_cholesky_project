@@ -10,6 +10,9 @@ happens at setup). Besides the parallel multifrontal at each thread count, the
 sequential multifrontal is run once per size : the parallel code at 1 thread
 against it measures the scheduling overhead. Reports go to plots/runs_par/;
 existing ones are skipped unless --force.
+
+1-thread jobs go through slurm_seq.sh (serial partition), the others through
+slurm_par.sh (OpenMP partition, which does not accept serial jobs).
 """
 
 import argparse
@@ -20,7 +23,8 @@ import sys
 from submit_runs import DEFAULT_BIN, ROOT_DIR, SCRIPT_DIR
 
 RUNS_DIR = os.path.join(ROOT_DIR, "plots", "runs_par")
-SLURM_SCRIPT = os.path.join(SCRIPT_DIR, "slurm_par.sh")
+SLURM_PAR = os.path.join(SCRIPT_DIR, "slurm_par.sh")
+SLURM_SEQ = os.path.join(SCRIPT_DIR, "slurm_seq.sh")
 
 MESH_SIZES = [8, 16, 24, 32, 48, 64, 96, 128, 192, 256]
 # Doubling : the elimination tree caps the speedup near 2x with the current
@@ -76,7 +80,9 @@ def main():
             res = subprocess.run(cmd, env=env, stdout=subprocess.DEVNULL)
         else:
             env = dict(os.environ, PROFILE_NS=binary)
-            res = subprocess.run([SLURM_SCRIPT, str(n), str(t), out, f], env=env)
+            cmd = ([SLURM_SEQ, str(n), "cholesky", "1e-8", "1", out, "nested", f]
+                   if t == 1 else [SLURM_PAR, str(n), str(t), out, f])
+            res = subprocess.run(cmd, env=env)
         if res.returncode != 0:
             sys.exit(f"  failed (exit {res.returncode})")
 
