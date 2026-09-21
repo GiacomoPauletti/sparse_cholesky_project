@@ -2,9 +2,10 @@
 
 SparseCholeskySolver::SparseCholeskySolver(CSRMatrix* A,
                                            CholeskyOrderingKind ordering,
-                                           Profiler* profiler)
-    : LinearSolver(profiler), symbolic{A}, factorization{A},
-      orderingKind{ordering}
+                                           Profiler* profiler,
+                                           CholeskyFactorizationKind factorization)
+    : LinearSolver(profiler), symbolic{A},
+      orderingKind{ordering}, factorizationKind{factorization}
 {
 
 }
@@ -45,8 +46,11 @@ void SparseCholeskySolver::initialize(CSRMatrix* A) {
     }
 
     /* Point the two phases at whichever matrix was selected above. */
-    symbolic      = SparseCholeskySymbolic(target);
-    factorization = SparseCholeskyFactorization(target);
+    symbolic = SparseCholeskySymbolic(target);
+    if (factorizationKind == CHOLESKY_FACTORIZATION_MULTIFRONTAL)
+        factorization.reset(new MultifrontalSparseCholeskyFactorization(target));
+    else
+        factorization.reset(new UplookingSparseCholeskyFactorization(target));
 
     patternL   = new CSRPattern();
     patternL_T = new CSRPattern();
@@ -60,13 +64,13 @@ void SparseCholeskySolver::initialize(CSRMatrix* A) {
     }
     {
         ProfileStep step(profiler, "row patterns");
-        symbolic.buildPatterns(patternL, patternL_T);
+        symbolic.buildPatterns(patternL, patternL_T, &cscToCsr);
     }
 
     {
         ProfileStep step(profiler, "factorization");
-        factorization.setPatternL(patternL);
-        factor = factorization.factorize();
+        factorization->setPatterns(patternL, patternL_T, &cscToCsr);
+        factor = factorization->factorize();
     }
 
     /* Scattering L into L^T is not one of the four textbook phases, but it is
@@ -85,19 +89,10 @@ void SparseCholeskySolver::initialize(CSRMatrix* A) {
     factor_T->col       = patternL_T->col.data;
     factor_T->data.resize(patternL_T->nnz);
 
-    for (uint32_t i = 0; i < n; i++) {
-        for (uint32_t k = factor->row_start[i]; k < factor->row_start[i + 1]; k++) {
-            uint32_t j = factor->col[k];
-            int lo = (int)factor_T->row_start[j];
-            int hi = (int)factor_T->row_start[j + 1] - 1;
-            while (lo <= hi) {
-                int mid = (lo + hi) / 2;
-                if      (factor_T->col[mid] == i) { factor_T->data[mid] = factor->data[k]; break; }
-                else if (factor_T->col[mid] <  i) lo = mid + 1;
-                else                               hi = mid - 1;
-            }
-        }
-    }
+    /* cscToCsr already says, for every entry of L^T, where the same entry
+     * sits in L, so this is a plain gather : no binary search per entry. */
+    for (size_t q = 0; q < patternL_T->nnz; q++)
+        factor_T->data[q] = factor->data[cscToCsr[q]];
 }
 
 void SparseCholeskySolver::substitute(double *__restrict x, const double *__restrict b) {

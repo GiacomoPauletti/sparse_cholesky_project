@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "cholesky.h"
 #include "adjacency_graph.h"
+#include "sys_utils.h"
 
 SparseCholeskySymbolic::SparseCholeskySymbolic(CSRMatrix* A) 
 {
@@ -46,7 +47,7 @@ const CholeskyTree& SparseCholeskySymbolic::buildTree() {
 }
 
 void SparseCholeskySymbolic::buildPatterns(CSRPattern* patternL, 
-    CSRPattern* patternL_T) {
+    CSRPattern* patternL_T, TArray<uint32_t>* cscToCsr) {
     
         if ( !this->isTreeBuilt ) {
         this->buildTree();
@@ -122,4 +123,29 @@ void SparseCholeskySymbolic::buildPatterns(CSRPattern* patternL,
     patternL_T->row_start[A->rows] = counter;
     patternL_T->nnz = counter;
 
+    if (!cscToCsr) return;
+
+    /* patternL_T is the exact transpose of patternL, so the two hold the same
+     * entries in two different orders and the map between them is a pure
+     * permutation -- no searching needed to build it.
+     *
+     * Row i of patternL is ascending (the strictly lower columns are sorted,
+     * and the diagonal pushed last IS the largest index of the row). Walking
+     * patternL_T by ascending row j therefore meets the entries of any given
+     * row i of L in ascending column order too, which is exactly the order
+     * they sit in inside row i. So one write cursor per row of L suffices. */
+    std::vector<uint32_t> next(A->rows);
+    for (uint32_t i = 0; i < A->rows; i++)
+        next[i] = patternL->row_start[i];
+
+    cscToCsr->resize(counter);
+    for (uint32_t j = 0; j < A->rows; j++) {
+        for (uint32_t q = patternL_T->row_start[j];
+             q < patternL_T->row_start[j + 1]; q++) {
+            uint32_t i = patternL_T->col[q];
+            ASSERT(next[i] < patternL->row_start[i + 1]);
+            ASSERT(patternL->col[next[i]] == j);
+            (*cscToCsr)[q] = next[i]++;
+        }
+    }
 }

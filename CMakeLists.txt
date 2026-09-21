@@ -63,6 +63,7 @@ add_library(nanofem
 	src/mesh/mesh_bounds.cpp
 
 	src/matrix/adjacency_graph.cpp
+	src/matrix/dense_matrix.cpp
 	src/linalg/cholesky.cpp
 	src/linalg/cholesky_ordering.cpp
 	src/linalg/cholesky_symbolic.cpp

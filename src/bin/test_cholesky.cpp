@@ -308,7 +308,8 @@ int main() {
 
     SparseCholeskyOrdering ordering;
     SparseCholeskySymbolic symbolic(&A);
-    SparseCholeskyFactorization factorization(&A);
+    UplookingSparseCholeskyFactorization factorization(&A);
+    MultifrontalSparseCholeskyFactorization mfFactorization(&A);
 
     std::cout << "==================== 1. METATEST TESTING =======================" << std::endl;
     std::cout << "That is, checking that the test is correct" << std::endl;
@@ -351,7 +352,8 @@ int main() {
 
     CSRPattern* patternL = new CSRPattern();
     CSRPattern* patternL_T = new CSRPattern();
-    symbolic.buildPatterns(patternL, patternL_T);
+    TArray<uint32_t> cscToCsr;
+    symbolic.buildPatterns(patternL, patternL_T, &cscToCsr);
 
     if (check_pattern(patternL, &expectedPatternL) == false) {
         std::cout << ">>> OUTCOME: Failed Symbolic (L) test" << std::endl;
@@ -368,6 +370,17 @@ int main() {
 
     std::cout << "==================== 4. FACTORIZATION PHASE TESTING =======================" << std::endl;
     // 3. Factorization phase
+    std::cout << "-- multifrontal --" << std::endl;
+    mfFactorization.setPatterns(patternL, patternL_T, &cscToCsr);
+    CSRMatrix* mfFactor = mfFactorization.factorize();
+    if (check_matrix(mfFactor, &expectedL) == false) {
+        std::cout << ">>> OUTCOME: Failed Multifrontal Factorization test" << std::endl;
+    } else {
+        std::cout << ">>> OUTCOME: Succeded Multifrontal Factorization test" << std::endl;
+    }
+    delete mfFactor;
+
+    std::cout << "-- up-looking --" << std::endl;
     factorization.setPatternL(patternL);
     CSRMatrix* factor = factorization.factorize();
     CSRMatrix* factor_T = nullptr;

@@ -34,7 +34,9 @@ struct NavierStokesSolver {
 			   LinearSolverKind backend = SOLVER_CHOLESKY,
 			   double tol = 1e-6, size_t iter_max = 500,
 			   CholeskyOrderingKind ordering =
-			       CHOLESKY_ORDERING_NATURAL);
+			       CHOLESKY_ORDERING_NATURAL,
+			   CholeskyFactorizationKind factorization =
+			       CHOLESKY_FACTORIZATION_UPLOOKING);
 #endif
 	~NavierStokesSolver();
 	const Mesh &m;
@@ -73,6 +75,10 @@ struct NavierStokesSolver {
 	/* Which permutation the Cholesky backend factorizes in. Ignored by CG.
 	 * Like backend, changing it needs the solvers rebuilt. */
 	CholeskyOrderingKind cholesky_ordering = CHOLESKY_ORDERING_NATURAL;
+	/* Which numerical factorization the Cholesky backend runs. Ignored by
+	 * CG, and like the ordering it only takes effect on a rebuild. */
+	CholeskyFactorizationKind cholesky_factorization =
+	    CHOLESKY_FACTORIZATION_UPLOOKING;
 	/* Switches backend and discards the current solvers. The vorticity one
 	 * is rebuilt lazily at the next time_step(). */
 	void set_backend(LinearSolverKind kind);

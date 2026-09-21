@@ -11,6 +11,7 @@
  *
  * Syntax :
  *      profile_NS [n] [cholesky|cg] [tol] [steps] [out] [natural|nested]
+ *                 [uplooking|multifrontal]
  *
  *      n      : subdivision level of the sphere         (default 16)
  *      solver : cholesky (direct) or cg (iterative)     (default cholesky)
@@ -18,11 +19,14 @@
  *      steps  : number of time steps to profile         (default 100)
  *      out    : report file                             (default performance.txt)
  *      order  : vertex ordering, Cholesky only          (default natural)
+ *      fact   : factorization algorithm, Cholesky only  (default uplooking)
  *
  * tol is accepted and ignored by the Cholesky backend, which is direct, and
- * order likewise by CG, which never factorizes. The out argument exists for
- * parameter sweeps : several runs sharing a working directory would otherwise
- * overwrite each other's report.
+ * order and fact likewise by CG, which never factorizes. order and fact are
+ * independent : either factorization runs in either ordering, and the two
+ * produce the same factor, so comparing them is a pure timing comparison.
+ * The out argument exists for parameter sweeps : several runs sharing a
+ * working directory would otherwise overwrite each other's report.
  */
 
 #include <math.h>
@@ -50,7 +54,7 @@ static const char *DEFAULT_PERF_PATH = "performance.txt";
 static void syntax(const char *prg_name)
 {
 	printf("Syntax : %s [n] [cholesky|cg] [tol] [steps] [out] "
-	       "[natural|nested]\n", prg_name);
+	       "[natural|nested] [uplooking|multifrontal]\n", prg_name);
 	printf("         n      : sphere subdivision level     (default %d)\n",
 	       DEFAULT_SUBDIV);
 	printf("         solver : cholesky or cg              (default "
@@ -63,6 +67,8 @@ static void syntax(const char *prg_name)
 	       DEFAULT_PERF_PATH);
 	printf("         order  : natural or nested           (default "
 	       "natural)\n");
+	printf("         fact   : uplooking or multifrontal   (default "
+	       "uplooking)\n");
 }
 
 /* Mirrors rescale_and_recenter_mesh() of test_navier_stokes.cpp, so that the
@@ -108,6 +114,8 @@ int main(int argc, char **argv)
 	int steps = DEFAULT_STEPS;
 	const char *perf_path = DEFAULT_PERF_PATH;
 	CholeskyOrderingKind ordering = CHOLESKY_ORDERING_NATURAL;
+	CholeskyFactorizationKind factorization =
+	    CHOLESKY_FACTORIZATION_UPLOOKING;
 
 	if (argc > 1) {
 		if (strcmp(argv[1], "-h") == 0 ||
@@ -163,11 +171,26 @@ int main(int argc, char **argv)
 			return EXIT_FAILURE;
 		}
 	}
+	if (argc > 7) {
+		if (strcmp(argv[7], "uplooking") == 0) {
+			factorization = CHOLESKY_FACTORIZATION_UPLOOKING;
+		} else if (strcmp(argv[7], "multifrontal") == 0) {
+			factorization = CHOLESKY_FACTORIZATION_MULTIFRONTAL;
+		} else {
+			printf("Unknown factorization '%s'.\n", argv[7]);
+			syntax(argv[0]);
+			return EXIT_FAILURE;
+		}
+	}
 
 	const char *backend_name =
 	    (backend == SOLVER_CG) ? "conjugate gradient" : "cholesky";
 	const char *ordering_name =
 	    (ordering == CHOLESKY_ORDERING_NESTED) ? "nested" : "natural";
+	const char *factorization_name =
+	    (factorization == CHOLESKY_FACTORIZATION_MULTIFRONTAL)
+		? "multifrontal"
+		: "up-looking";
 
 	char title[256];
 	if (backend == SOLVER_CG) {
@@ -176,9 +199,10 @@ int main(int argc, char **argv)
 			 subdiv, backend_name, tol, steps);
 	} else {
 		snprintf(title, sizeof(title),
-			 "Navier Stokes : sphere %d, %s (%s ordering), "
+			 "Navier Stokes : sphere %d, %s (%s, %s ordering), "
 			 "%d step(s)",
-			 subdiv, backend_name, ordering_name, steps);
+			 subdiv, backend_name, factorization_name,
+			 ordering_name, steps);
 	}
 	Profiler profiler(title);
 
@@ -210,6 +234,7 @@ int main(int argc, char **argv)
 	profiler.setInfo("solver", backend_name);
 	if (backend == SOLVER_CHOLESKY) {
 		profiler.setInfo("ordering", ordering_name);
+		profiler.setInfo("factorization", factorization_name);
 	}
 	if (backend == SOLVER_CG) {
 		profiler.setInfo("tolerance", tol);
@@ -224,7 +249,7 @@ int main(int argc, char **argv)
 	 *********************************************************************/
 	profiler.beginSection("solver construction");
 	NavierStokesSolver solver(mesh, &profiler, backend, tol, ITER_MAX,
-				  ordering);
+				  ordering, factorization);
 	profiler.endSection();
 
 	profiler.beginSection("initial condition");
@@ -237,6 +262,7 @@ int main(int argc, char **argv)
 	printf("Solver             : %s\n", backend_name);
 	if (backend == SOLVER_CHOLESKY) {
 		printf("Ordering           : %s\n", ordering_name);
+		printf("Factorization      : %s\n", factorization_name);
 	}
 	if (backend == SOLVER_CG) {
 		printf("Tolerance          : %g\n", tol);

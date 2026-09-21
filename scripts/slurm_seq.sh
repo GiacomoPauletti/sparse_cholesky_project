@@ -4,7 +4,8 @@
 #
 # This script is NOT itself a batch script : run it directly,
 #
-#       ./slurm_seq.sh [n] [cholesky|cg] [tol] [steps] [out] [natural|nested]
+#       ./slurm_seq.sh [n] [cholesky|cg] [tol] [steps] [out] [natural|nested] \
+#                      [uplooking|multifrontal]
 #
 # and it submits the job below through sbatch. The batch script is the
 # heredoc at the bottom, fed to sbatch on its standard input, so there is no
@@ -18,6 +19,7 @@
 #       steps  : number of time steps         (default 100)
 #       out    : report file                  (default performance.txt)
 #       order  : vertex ordering, Cholesky only (default natural)
+#       fact   : factorization, Cholesky only  (default uplooking)
 #
 # Give distinct out names when submitting a sweep : all the jobs share the
 # submit directory, so they would otherwise overwrite each other's report.
@@ -40,6 +42,7 @@ TOL=${3:-1e-8}
 STEPS=${4:-100}
 OUT=${5:-performance.txt}
 ORDER=${6:-natural}
+FACT=${7:-uplooking}
 
 case "$SOLVER" in
 	cholesky | cg) ;;
@@ -53,6 +56,15 @@ case "$ORDER" in
 	natural | nested) ;;
 	*)
 		echo "Unknown ordering '$ORDER' (expected natural or nested)." >&2
+		exit 1
+		;;
+esac
+
+case "$FACT" in
+	uplooking | multifrontal) ;;
+	*)
+		echo "Unknown factorization '$FACT' (expected uplooking or" \
+			"multifrontal)." >&2
 		exit 1
 		;;
 esac
@@ -76,8 +88,8 @@ if [ "$SOLVER" == "cholesky" ]; then
 sbatch <<EOF
 #!/bin/bash -l
 #SBATCH -J $SOLVER            #Job name
-#SBATCH -o ./${SOLVER}_${N}_${STEPS}.out        #stdout (%x=jobname, %j=jobid)
-#SBATCH -e ./${SOLVER}_${N}_${STEPS}.err        #stderr (%x=jobname, %j=jobid)
+#SBATCH -o ./${SOLVER}_${ORDER}_${FACT}_${N}_${STEPS}.out        #stdout (%x=jobname, %j=jobid)
+#SBATCH -e ./${SOLVER}_${ORDER}_${FACT}_${N}_${STEPS}.err        #stderr (%x=jobname, %j=jobid)
 #SBATCH -D ./                 #Initial working directory
 #SBATCH --partition=s.tok     #Queue/Partition
 #SBATCH --qos=s.tok.standard  #Quality of Service (see below): s.tok.short, s.tok.standard, s.tok.long, tok.debug
@@ -92,7 +104,7 @@ export OMP_NUM_THREADS=\${SLURM_CPUS_PER_TASK:-1}
 export OMP_PLACES=cores
 
 # Run the program:
-srun $BIN $N $SOLVER $TOL $STEPS $OUT $ORDER
+srun $BIN $N $SOLVER $TOL $STEPS $OUT $ORDER $FACT
 EOF
 else 
 sbatch <<EOF
@@ -114,7 +126,7 @@ export OMP_NUM_THREADS=\${SLURM_CPUS_PER_TASK:-1}
 export OMP_PLACES=cores
 
 # Run the program:
-srun $BIN $N $SOLVER $TOL $STEPS $OUT $ORDER
+srun $BIN $N $SOLVER $TOL $STEPS $OUT $ORDER $FACT
 EOF
 fi
 

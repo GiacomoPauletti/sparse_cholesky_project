@@ -6,7 +6,11 @@
 
 Reports land in plots/runs/, one file per parameter combination, named
 
-    n<N>_<solver>_<ordering>_tol<TOL>_steps<STEPS>.txt
+    n<N>_<solver>_<ordering>_tol<TOL>_steps<STEPS>[_<factorization>].txt
+
+The factorization suffix is omitted for the up-looking one, which is the
+default : that keeps the names of the runs made before the multifrontal
+factorization existed, so an existing plots/runs/ is not invalidated.
 
 The name only has to be unique : every report states its own parameters in its
 header, and plot_runs.py reads them from there rather than from the file name.
@@ -28,6 +32,13 @@ The sweep is three groups, one per question plot_runs.py answers :
                  This is the one that shows the crossover : Cholesky pays a
                  large fixed factorization then solves cheaply, CG pays nothing
                  upfront and something on every solve.
+
+Every Cholesky group is run twice over, once per factorization algorithm, but
+the multifrontal one only in the nested dissection ordering : the natural
+ordering's fill in makes its fronts large enough that the run is expensive
+without saying anything the nested one does not say better. The two
+factorizations produce the same factor, so anything differing between them is
+a pure timing result -- fill in, nnz(L) and the solve are identical.
 
 Jobs are independent, so the scheduler runs them in parallel ; the whole sweep
 is a few dozen jobs of at most a couple of minutes each.
@@ -57,6 +68,12 @@ TOLERANCES = ["1e-6", "1e-8", "1e-10"]
 # is run once, under the natural label.
 ORDERINGS = ["natural", "nested"]
 
+# (ordering, factorization) pairs the Cholesky backend is run in. Multifrontal
+# is nested only, see the module docstring.
+CHOLESKY_VARIANTS = [("natural", "uplooking"),
+                     ("nested", "uplooking"),
+                     ("nested", "multifrontal")]
+
 # Group B : one mesh scan, at this many time steps.
 STEPS_FOR_SIZE_SCAN = 20
 # Group C : one time step scan, at this mesh size.
@@ -69,35 +86,46 @@ STEPS_SCAN = [1, 2, 5, 10, 20, 50, 100]
 SIZE_SCAN_SIZES = [n for n in MESH_SIZES if n >= 8]
 
 
-def report_name(n, solver, tol, steps, ordering):
+def report_name(n, solver, tol, steps, ordering, fact):
+    # No suffix for the default factorization : see the module docstring.
+    suffix = "" if fact == "uplooking" else f"_{fact}"
     return (f"n{n:03d}_{solver}_{ordering}_tol{tol}"
-            f"_steps{steps:04d}.txt")
+            f"_steps{steps:04d}{suffix}.txt")
 
 
 def sweep():
-    """-> ordered list of (n, solver, tol, steps, ordering), deduplicated."""
+    """-> ordered list of (n, solver, tol, steps, ordering, fact), deduped.
+
+    CG never factorizes, so its runs carry the up-looking label ; it is only
+    there to keep every tuple the same shape, and nothing reads it back.
+    """
     runs = []
 
     # A. Cholesky phases against mesh size. tol is ignored by the direct
     #    solver ; it is still spelled out so the file name stays uniform.
+    #    This group is what the up-looking vs multifrontal scaling figure is
+    #    drawn from, hence every mesh size for both factorizations.
     for n in MESH_SIZES:
-        for ordering in ORDERINGS:
-            runs.append((n, "cholesky", "1e-8", 1, ordering))
+        for ordering, fact in CHOLESKY_VARIANTS:
+            runs.append((n, "cholesky", "1e-8", 1, ordering, fact))
 
     # B. Cholesky vs CG against mesh size.
     for n in SIZE_SCAN_SIZES:
-        for ordering in ORDERINGS:
-            runs.append((n, "cholesky", "1e-8", STEPS_FOR_SIZE_SCAN, ordering))
+        for ordering, fact in CHOLESKY_VARIANTS:
+            runs.append((n, "cholesky", "1e-8", STEPS_FOR_SIZE_SCAN, ordering,
+                         fact))
         for tol in TOLERANCES:
-            runs.append((n, "cg", tol, STEPS_FOR_SIZE_SCAN, "natural"))
+            runs.append((n, "cg", tol, STEPS_FOR_SIZE_SCAN, "natural",
+                         "uplooking"))
 
     # C. Cholesky vs CG against the number of time steps.
     for steps in STEPS_SCAN:
-        for ordering in ORDERINGS:
+        for ordering, fact in CHOLESKY_VARIANTS:
             runs.append((MESH_FOR_STEPS_SCAN, "cholesky", "1e-8", steps,
-                         ordering))
+                         ordering, fact))
         for tol in TOLERANCES:
-            runs.append((MESH_FOR_STEPS_SCAN, "cg", tol, steps, "natural"))
+            runs.append((MESH_FOR_STEPS_SCAN, "cg", tol, steps, "natural",
+                         "uplooking"))
 
     seen = set()
     unique = []
@@ -127,13 +155,13 @@ def main():
 
     todo = []
     skipped = 0
-    for n, solver, tol, steps, ordering in runs:
+    for n, solver, tol, steps, ordering, fact in runs:
         out = os.path.join(RUNS_DIR,
-                           report_name(n, solver, tol, steps, ordering))
+                           report_name(n, solver, tol, steps, ordering, fact))
         if os.path.exists(out) and not args.force:
             skipped += 1
             continue
-        todo.append((n, solver, tol, steps, ordering, out))
+        todo.append((n, solver, tol, steps, ordering, fact, out))
 
     print(f"{len(runs)} run(s) in the sweep, {skipped} already done, "
           f"{len(todo)} to go.")
@@ -142,9 +170,9 @@ def main():
         return
 
     if args.dry_run:
-        for n, solver, tol, steps, ordering, out in todo:
-            print(f"  n={n:<3} {solver:<8} {ordering:<8} tol={tol:<6} "
-                  f"steps={steps:<4} -> {os.path.basename(out)}")
+        for n, solver, tol, steps, ordering, fact, out in todo:
+            print(f"  n={n:<3} {solver:<8} {ordering:<8} {fact:<12} "
+                  f"tol={tol:<6} steps={steps:<4} -> {os.path.basename(out)}")
         return
 
     # Checked up front in both modes : failing here beats discovering it from
@@ -158,11 +186,12 @@ def main():
     binary = os.path.abspath(args.bin)
 
     if args.local:
-        for i, (n, solver, tol, steps, ordering, out) in enumerate(todo, 1):
-            print(f"[{i}/{len(todo)}] n={n} {solver} {ordering} tol={tol} "
-                  f"steps={steps}", flush=True)
+        for i, (n, solver, tol, steps, ordering, fact, out) in enumerate(todo,
+                                                                         1):
+            print(f"[{i}/{len(todo)}] n={n} {solver} {ordering} {fact} "
+                  f"tol={tol} steps={steps}", flush=True)
             res = subprocess.run(
-                [binary, str(n), solver, tol, str(steps), out, ordering],
+                [binary, str(n), solver, tol, str(steps), out, ordering, fact],
                 stdout=subprocess.DEVNULL)
             if res.returncode != 0:
                 print(f"  failed (exit {res.returncode})")
@@ -176,12 +205,12 @@ def main():
         # our --bin through the environment so that this script stays the
         # single place where the path is configured, whichever mode is used.
         env = dict(os.environ, PROFILE_NS=binary)
-        for n, solver, tol, steps, ordering, out in todo:
+        for n, solver, tol, steps, ordering, fact, out in todo:
             print(f"submitting n={n:<3} {solver:<8} {ordering:<8} "
-                  f"tol={tol:<6} steps={steps:<4}", flush=True)
+                  f"{fact:<12} tol={tol:<6} steps={steps:<4}", flush=True)
             res = subprocess.run(
                 [SLURM_SCRIPT, str(n), solver, tol, str(steps), out,
-                 ordering], env=env)
+                 ordering, fact], env=env)
             if res.returncode != 0:
                 print(f"  submission failed")
                 sys.exit(1)

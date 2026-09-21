@@ -15,6 +15,18 @@ Figures
     3. total_vs_steps.png    Cholesky vs CG total cost against time steps
     4. cholesky_fillin.png   nnz(L)/nnz(A), the memory cost of the factor
     5. cg_iterations.png     CG iterations per solve against mesh size
+    6. cholesky_factorization_scaling.png
+                             up-looking vs multifrontal : how the numerical
+                             factorization scales, and by how much the second
+                             beats the first
+
+A Cholesky run is identified by its VARIANT, the (ordering, factorization)
+pair : the two are independent knobs, the ordering deciding how much fill in
+the factor suffers and the factorization only how fast the same factor is
+computed. Curves are therefore keyed by the pair, not by the ordering alone,
+and the factorization is dropped from the labels when the reports only contain
+one of them -- which is what every report written before the multifrontal
+factorization existed amounts to.
 
 The sphere is a subdivided cube, so elements = 12 n^2 and DoF = 6 n^2 + 2 at
 subdivision n ; both counts are read from the reports, not recomputed here.
@@ -49,16 +61,59 @@ SURFACE = "#ffffff"
 # families separate before the labels are read. Checked against protanopia and
 # deuteranopia : no pair below 3:1 on this surface, and every curve is direct
 # labelled anyway, so identity never rests on color alone.
+def variant(run):
+    """(ordering, factorization) : what tells two Cholesky curves apart."""
+    return (run["ordering"], run["factorization"])
+
+
+def variant_label(key, show_fact=True):
+    ordering, fact = key
+    return (f"cholesky ({ordering}, {fact})" if show_fact
+            else f"cholesky ({ordering})")
+
+
+def variant_slug(key):
+    """File name fragment for a variant.
+
+    The default factorization contributes nothing, exactly as in the report
+    names submit_runs.py writes : the figure of a variant that existed before
+    the multifrontal one did keeps the file name it had, so an existing
+    plots/ directory gains files rather than being left with stale ones.
+    """
+    ordering, fact = key
+    return ordering if fact == "up-looking" else f"{ordering}_{fact}"
+
+
+def variant_color(key):
+    for name in (variant_label(key, True), variant_label(key, False)):
+        if name in COLORS:
+            return COLORS[name]
+    return COLORS["cholesky"]
+
+
+def show_factorization(runs):
+    """True when the reports hold more than one factorization to compare."""
+    return len({r["factorization"] for r in runs
+                if r["solver"] == "cholesky"}) > 1
+
+
 def series_label(run):
     """Name of the curve a run belongs to."""
     if run["solver"] == "cholesky":
-        return f"cholesky ({run['ordering']})"
+        return variant_label(variant(run))
     return f"cg tol {run['tol']}"
 
 
 COLORS = {
     "cholesky (natural)": "#8c6f1f",
     "cholesky (nested)": "#0f5a8f",
+    "cholesky (natural, up-looking)": "#8c6f1f",
+    "cholesky (nested, up-looking)": "#0f5a8f",
+    # Violet, already in this palette for figure 1's tree assembly and so
+    # already checked on this surface. The two never share a figure.
+    "cholesky (nested, multifrontal)": "#7a5bd6",
+    "cholesky (natural, multifrontal)": "#b0872a",
+    "speedup": "#7a5bd6",
     "tree assembly": "#7a5bd6",
     "row pattern construction": "#2a78d6",
     "factorization": "#0f5a8f",
@@ -179,6 +234,12 @@ def load_runs():
         # have no such line and were all natural.
         run["ordering"] = (info.get("ordering", "natural")
                            if run["solver"] == "cholesky" else None)
+        # Reports written before the factorization became selectable have no
+        # such line and were all up-looking. profile_NS spells it "up-looking"
+        # and "multifrontal" ; anything else is normalized to the former.
+        fact = info.get("factorization", "up-looking").strip().lower()
+        fact = "multifrontal" if fact.startswith("multi") else "up-looking"
+        run["factorization"] = fact if run["solver"] == "cholesky" else None
         run["nnz_a"] = int(info["nnz(A)"]) if "nnz(A)" in info else None
         run["nnz_l"] = int(info["nnz(L)"]) if "nnz(L)" in info else None
         run["cg_iter_psi"] = _float(info.get("cg iterations per psi solve"))
@@ -234,15 +295,17 @@ def phase_cost(run, step_name):
 # Plot helpers
 # ---------------------------------------------------------------------------
 
-def new_axes(title, xlabel, ylabel, subtitle=None):
-    fig, ax = plt.subplots(figsize=(9, 6), facecolor=SURFACE)
+def style_axes(ax, title=None, xlabel=None, ylabel=None, subtitle=None):
     ax.set_facecolor(SURFACE)
-    ax.set_title(title, fontsize=12, pad=18 if subtitle else 10, color=INK)
+    if title:
+        ax.set_title(title, fontsize=12, pad=18 if subtitle else 10, color=INK)
     if subtitle:
         ax.text(0.0, 1.015, subtitle, transform=ax.transAxes, fontsize=9,
                 color=MUTED, ha="left", va="bottom")
-    ax.set_xlabel(xlabel, fontsize=10, color=INK)
-    ax.set_ylabel(ylabel, fontsize=10, color=INK)
+    if xlabel:
+        ax.set_xlabel(xlabel, fontsize=10, color=INK)
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=10, color=INK)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     for side in ("left", "bottom"):
@@ -250,6 +313,12 @@ def new_axes(title, xlabel, ylabel, subtitle=None):
     ax.tick_params(colors=MUTED, labelsize=9)
     ax.grid(True, which="both", color=GRID, linewidth=0.6)
     ax.set_axisbelow(True)
+    return ax
+
+
+def new_axes(title, xlabel, ylabel, subtitle=None):
+    fig, ax = plt.subplots(figsize=(9, 6), facecolor=SURFACE)
+    style_axes(ax, title, xlabel, ylabel, subtitle)
     return fig, ax
 
 
@@ -276,9 +345,25 @@ def fit_exponent(xs, ys):
 
 
 def declutter(labels, ax, logy=True):
-    """Push apart labels sharing the right edge of the plot."""
+    """Push apart labels sharing the right edge of the plot.
+
+    A label carrying side="left" is drawn to the left of its anchor instead,
+    and takes no part in the spreading : it does not share the right edge, so
+    it cannot collide with the stack there. That is the escape hatch for a
+    curve that stops early, whose right end is in the middle of the plot and
+    whose label would otherwise be written straight across its neighbours.
+    """
     if not labels:
         return
+
+    for e in [e for e in labels if e.get("side") == "left"]:
+        ax.annotate(e["text"], xy=(e["x"], e["y"]), xytext=(-9, 0),
+                    textcoords="offset points", fontsize=8.5,
+                    color=e["color"], ha="right", va="center", zorder=4)
+    labels = [e for e in labels if e.get("side") != "left"]
+    if not labels:
+        return
+
     ymin, ymax = ax.get_ylim()
     if logy:
         lo, hi = math.log10(ymin), math.log10(ymax)
@@ -324,36 +409,51 @@ def cg_color(tol, index):
 # Figure 1 : Cholesky phases against mesh size
 # ---------------------------------------------------------------------------
 
-def plot_phases(runs, ordering=None):
-    """Figure 1, for one ordering : mixing the two would be meaningless, since
-    the whole point of the permutation is that it changes these costs."""
-    cholesky = [r for r in runs if r["solver"] == "cholesky"]
-    if not cholesky:
-        print("figure 1 skipped : no Cholesky run")
-        return
-    if ordering is None:
-        available = {r["ordering"] for r in cholesky}
-        # Nested is the interesting one when it is there.
-        ordering = "nested" if "nested" in available else sorted(available)[0]
+def phase_rows(runs, key):
+    """Cheapest run per mesh size for one variant, ordered by mesh size.
 
-    # One time step is all these phases need, but any Cholesky run carries
-    # them ; the smallest step count is preferred so the numbers come from the
-    # cheapest runs available.
+    One time step is all the setup phases need, but any Cholesky run carries
+    them ; the smallest step count is preferred so the numbers come from the
+    cheapest runs available.
+    """
     by_size = {}
-    for r in cholesky:
-        if r["ordering"] != ordering:
+    for r in runs:
+        if r["solver"] != "cholesky" or variant(r) != key:
             continue
         cur = by_size.get(r["elements"])
         if cur is None or r["steps"] < cur["steps"]:
             by_size[r["elements"]] = r
-    rows = sorted(by_size.values(), key=lambda r: r["elements"])
+    return sorted(by_size.values(), key=lambda r: r["elements"])
+
+
+def plot_phases(runs, key=None, show_fact=True):
+    """Figure 1, for one variant : mixing two orderings would be meaningless,
+    since the whole point of the permutation is that it changes these costs,
+    and mixing two factorizations would average away the very difference
+    figure 6 is about."""
+    cholesky = [r for r in runs if r["solver"] == "cholesky"]
+    if not cholesky:
+        print("figure 1 skipped : no Cholesky run")
+        return
+    if key is None:
+        available = {variant(r) for r in cholesky}
+        # Nested is the interesting ordering when it is there.
+        key = next((k for k in sorted(available) if k[0] == "nested"),
+                   sorted(available)[0])
+
+    name = variant_label(key, show_fact)
+    rows = phase_rows(runs, key)
     if len(rows) < 2:
-        print(f"figure 1 ({ordering}) skipped : need two mesh sizes or more")
+        print(f"figure 1 ({name}) skipped : need two mesh sizes or more")
         return
 
+    ordering, fact = key
+    slug = variant_slug(key)
+    which = (f"{ordering} ordering, {fact} factorization" if show_fact
+             else f"{ordering} ordering")
     xs = [r["elements"] for r in rows]
     fig, ax = new_axes(
-        f"Sparse Cholesky, {ordering} ordering : cost of each phase",
+        f"Sparse Cholesky, {which} : cost of each phase",
         "elements (triangles)   [= 12 n² at subdivision n]",
         "time of one invocation (ms)",
         f"{len(rows)} mesh sizes, {rows[0]['dofs']} to {rows[-1]['dofs']} DoF",
@@ -386,9 +486,9 @@ def plot_phases(runs, ordering=None):
     guide_lines(ax, anchor, xs[-1], ((1.0, "E"), (1.5, "E^1.5")), labels)
     ax.set_xlim(min(xs) * 0.8, max(xs) * 5.0)
     declutter(labels, ax)
-    savefig(f"cholesky_phases_{ordering}.png")
+    savefig(f"cholesky_phases_{slug}.png")
 
-    print(f"\n  fitted exponents ({ordering}), cost ∝ elements^p :")
+    print(f"\n  fitted exponents ({name}), cost ∝ elements^p :")
     for _, label in PHASES:
         if exponents.get(label):
             print(f"    {label:<28} p = {exponents[label]:.2f}")
@@ -410,10 +510,11 @@ def plot_total_vs_size(runs):
         return
     steps = max(counts, key=lambda s: (counts[s], s))
 
+    show_fact = show_factorization(runs)
     chols = {}
     for r in runs:
         if r["solver"] == "cholesky" and r["steps"] == steps:
-            chols.setdefault(r["ordering"], []).append(r)
+            chols.setdefault(variant(r), []).append(r)
     for o in chols:
         chols[o].sort(key=lambda r: r["elements"])
     cgs = {}
@@ -438,16 +539,14 @@ def plot_total_vs_size(runs):
         "Cholesky vs conjugate gradient : total cost against mesh size",
         "elements (triangles)   [= 12 n² at subdivision n]",
         f"setup + {steps} time steps (ms)",
-        f"{steps} time steps per run ; the direct method pays its "
-        f"factorization once, the iterative one pays on every solve",
     )
     ax.set_xscale("log")
     ax.set_yscale("log")
 
     labels = []
     anchor = None
-    for ordering in sorted(chols):
-        rs = chols[ordering]
+    for key in sorted(chols):
+        rs = chols[key]
         if len(rs) < 2:
             continue
         px = [r["elements"] for r in rs]
@@ -455,12 +554,18 @@ def plot_total_vs_size(runs):
         p = fit_exponent(px, py)
         if anchor is None:
             anchor = (px[0], py[0])
-        label = f"cholesky ({ordering})"
-        color = COLORS.get(label, COLORS["cholesky"])
+        label = variant_label(key, show_fact)
+        color = variant_color(key)
         ax.plot(px, py, marker="o", markersize=4, linewidth=1.8,
                 color=color, zorder=3)
-        labels.append({"x": px[-1], "y": py[-1], "color": color,
-                       "text": f"{label}  (∝ E^{p:.2f})" if p else label})
+        entry = {"x": px[-1], "y": py[-1], "color": color,
+                 "text": f"{label}  (∝ E^{p:.2f})" if p else label}
+        # The natural curve stops where its runs stop being affordable, well
+        # short of the right edge, so its label is written leftwards from that
+        # last point instead of across the curves that carry on past it.
+        if px[-1] < max(all_x):
+            entry["side"] = "left"
+        labels.append(entry)
 
     for i, tol in enumerate(sorted(cgs, key=lambda t: -float(t or 0))):
         rs = cgs[tol]
@@ -500,10 +605,11 @@ def plot_total_vs_steps(runs):
         return
 
     here = [r for r in runs if r["elements"] == elements]
+    show_fact = show_factorization(runs)
     chols = {}
     for r in here:
         if r["solver"] == "cholesky":
-            chols.setdefault(r["ordering"], []).append(r)
+            chols.setdefault(variant(r), []).append(r)
     for o in chols:
         chols[o].sort(key=lambda r: r["steps"])
     cgs = {}
@@ -526,14 +632,14 @@ def plot_total_vs_steps(runs):
     ax.set_yscale("log")
 
     labels = []
-    for ordering in sorted(chols):
-        rs = chols[ordering]
+    for key in sorted(chols):
+        rs = chols[key]
         if len(rs) < 2:
             continue
         px = [r["steps"] for r in rs]
         py = [r["total_ms"] for r in rs]
-        label = f"cholesky ({ordering})"
-        color = COLORS.get(label, COLORS["cholesky"])
+        label = variant_label(key, show_fact)
+        color = variant_color(key)
         ax.plot(px, py, marker="o", markersize=4, linewidth=1.8,
                 color=color, zorder=3)
         labels.append({"x": px[-1], "y": py[-1], "color": color,
@@ -559,26 +665,26 @@ def plot_total_vs_steps(runs):
     # crossover into range, so reporting only the natural one would hide the
     # result. The annotation goes on the earliest crossing found.
     found = []
-    for ordering, rs in chols.items():
+    for key, rs in chols.items():
         if len(rs) < 2:
             continue
         for tol in sorted(cgs, key=lambda t: -float(t or 0)):
             crossing = _crossover(rs, cgs[tol])
             if crossing:
-                found.append((crossing, ordering, tol))
+                found.append((crossing, variant_label(key, show_fact), tol))
     if found:
         found.sort()
-        crossing, ordering, tol = found[0]
+        crossing, name, tol = found[0]
         ax.axvline(crossing, color=MUTED, linestyle="--", linewidth=0.9,
                    zorder=1)
         ax.annotate(
-            f"cholesky ({ordering}) overtakes cg tol {tol} at "
+            f"{name} overtakes cg tol {tol} at "
             f"≈ {crossing:.0f} steps",
             xy=(crossing, ax.get_ylim()[0]), xytext=(4, 14),
             textcoords="offset points", fontsize=8, color=MUTED, rotation=90)
         print("  crossovers (time steps beyond which Cholesky is cheaper) :")
-        for c, o, t in found:
-            print(f"    cholesky ({o}) vs cg tol {t} : {c:.1f} steps")
+        for c, name, t in found:
+            print(f"    {name} vs cg tol {t} : {c:.1f} steps")
     else:
         print("  no crossover within the measured range of time steps")
 
@@ -611,15 +717,33 @@ def _crossover(chol, cg):
 def plot_fillin(runs):
     by_ordering = {}
     for r in runs:
-        if r["solver"] == "cholesky" and r["nnz_l"] and r["nnz_a"]:
-            by_ordering.setdefault(r["ordering"], {})[r["elements"]] = r
+        if r["solver"] != "cholesky" or not (r["nnz_l"] and r["nnz_a"]):
+            continue
+        # Keyed by ordering, not by variant : nnz(L) is decided by the
+        # permutation alone, both factorizations computing the same factor
+        # from the same pattern, so one curve per factorization would draw the
+        # same points twice. Up-looking wins ties, for continuity with the
+        # reports written before the multifrontal one existed.
+        d = by_ordering.setdefault(r["ordering"], {})
+        cur = d.get(r["elements"])
+        if cur is None or (cur["factorization"] != "up-looking"
+                           and r["factorization"] == "up-looking"):
+            d[r["elements"]] = r
     by_ordering = {o: sorted(d.values(), key=lambda r: r["elements"])
                    for o, d in by_ordering.items()}
     by_ordering = {o: rs for o, rs in by_ordering.items() if len(rs) >= 2}
     if not by_ordering:
         print("figure 4 skipped : need nnz(A) and nnz(L) at two sizes or more")
         return
-    rows = by_ordering[sorted(by_ordering)[0]]
+    # nnz(A) is a property of the operator, identical under any permutation,
+    # so its reference curve is built from every size that ANY ordering
+    # reached. Taking it from one ordering would silently truncate it to that
+    # ordering's largest successful run.
+    a_by_size = {}
+    for rs in by_ordering.values():
+        for r in rs:
+            a_by_size[r["elements"]] = r
+    rows = [a_by_size[e] for e in sorted(a_by_size)]
     xs = [r["elements"] for r in rows]
 
     fig, ax = new_axes(
@@ -669,46 +793,222 @@ def plot_fillin(runs):
 # Figure 5 : CG iterations
 # ---------------------------------------------------------------------------
 
+# The two SPD systems a time step solves. They are plotted together on
+# purpose : the contrast between them is the result.
+CG_SYSTEMS = [
+    # key in the run dict, name, line style, marker
+    ("cg_iter_psi", "stream function", "-", "s"),
+    ("cg_iter_omega", "vorticity", "--", "o"),
+]
+
+
 def plot_cg_iterations(runs):
-    cgs = {}
-    for r in runs:
-        if r["solver"] != "cholesky" and r["cg_iter_psi"]:
-            cgs.setdefault(r["tol"], {})[r["elements"]] = r
-    cgs = {t: sorted(d.values(), key=lambda r: r["elements"])
-           for t, d in cgs.items()}
-    cgs = {t: rs for t, rs in cgs.items() if len(rs) >= 2}
-    if not cgs:
+    """Iterations per solve, for both systems, against mesh size.
+
+    The stream function solve is Spin * psi = M * omega, i.e. the pure
+    stiffness operator : its condition number grows like h^-2, so the
+    iteration count grows like sqrt(DoF).
+
+    The vorticity solve is (M + nu*dt*S) * omega = rhs. With the defaults of
+    profile_NS, nu*dt = 2e-4, so that operator is overwhelmingly the mass
+    matrix, whose condition number is bounded independently of h. Its
+    iteration count should therefore be close to flat -- which is why the two
+    belong on the same axes rather than in two figures at different scales.
+    """
+    present = {}
+    for key, _, _, _ in CG_SYSTEMS:
+        cgs = {}
+        for r in runs:
+            if r["solver"] != "cholesky" and r[key]:
+                cgs.setdefault(r["tol"], {})[r["elements"]] = r
+        cgs = {t: sorted(d.values(), key=lambda r: r["elements"])
+               for t, d in cgs.items()}
+        cgs = {t: rs for t, rs in cgs.items() if len(rs) >= 2}
+        if cgs:
+            present[key] = cgs
+
+    if not present:
         print("figure 5 skipped : need CG runs at two mesh sizes or more")
         return
 
     fig, ax = new_axes(
         "Conjugate gradient : iterations per solve against mesh size",
-        "elements (triangles)   [= 12 n² at subdivision n]",
-        "iterations per stream function solve",
-        "the iteration count is what makes CG scale worse than its per "
-        "iteration cost suggests",
+        "elements (triangles)",
+        "iterations per solve",
     )
     ax.set_xscale("log")
     ax.set_yscale("log")
 
     labels = []
     all_x = []
-    for i, tol in enumerate(sorted(cgs, key=lambda t: -float(t or 0))):
-        rs = cgs[tol]
-        px = [r["elements"] for r in rs]
-        py = [r["cg_iter_psi"] for r in rs]
-        all_x += px
-        p = fit_exponent(px, py)
-        color = cg_color(tol, i)
-        ax.plot(px, py, marker="s", markersize=4, linewidth=1.6,
-                color=color, zorder=3)
-        labels.append({"x": px[-1], "y": py[-1], "color": color,
-                       "text": f"tol {tol}  (∝ E^{p:.2f})" if p
-                               else f"tol {tol}"})
+    exponents = {}
+    for key, system, style, marker in CG_SYSTEMS:
+        cgs = present.get(key)
+        if not cgs:
+            print(f"  '{system}' : no usable iteration count in the reports")
+            continue
+        for i, tol in enumerate(sorted(cgs, key=lambda t: -float(t or 0))):
+            rs = cgs[tol]
+            px = [r["elements"] for r in rs]
+            py = [r[key] for r in rs]
+            all_x += px
+            p = fit_exponent(px, py)
+            # The vorticity curve has a knee : mass dominated and flat while
+            # nu*dt/h^2 is small, stiffness dominated and growing like
+            # sqrt(DoF) once it is not. A single fitted exponent averages the
+            # two regimes, so the tail is reported next to it.
+            exponents[(system, tol)] = (p, fit_exponent(px[-3:], py[-3:]))
+            color = cg_color(tol, i)
+            ax.plot(px, py, marker=marker, markersize=4, linewidth=1.6,
+                    linestyle=style, color=color, zorder=3)
+            labels.append({
+                "x": px[-1], "y": py[-1], "color": color,
+                "text": f"{system}, tol {tol}  (∝ E^{p:.2f})" if p
+                        else f"{system}, tol {tol}",
+            })
 
-    ax.set_xlim(min(all_x) * 0.8, max(all_x) * 4.0)
+    ax.set_xlim(min(all_x) * 0.8, max(all_x) * 6.0)
     declutter(labels, ax)
     savefig("cg_iterations.png")
+
+    print("\n  cg iterations per solve, growth ∝ elements^p :")
+    print(f"    {'system':<16} {'tol':<10} {'all sizes':>10} "
+          f"{'3 largest':>10}")
+    for (system, tol), (p, tail) in exponents.items():
+        if p is None:
+            continue
+        tail_txt = f"{tail:+.2f}" if tail is not None else "-"
+        print(f"    {system:<16} {tol:<10} {p:>+10.2f} {tail_txt:>10}")
+
+
+
+# ---------------------------------------------------------------------------
+# Figure 6 : up-looking vs multifrontal
+# ---------------------------------------------------------------------------
+
+def plot_factorization_scaling(runs):
+    """How the two numerical factorizations scale, and by how much they differ.
+
+    Only the factorization phase is plotted, and only it is comparable : the
+    two algorithms produce the same L from the same pattern, so the ordering,
+    the symbolic phase, nnz(L) and the substitutions are identical between
+    them by construction. Everything visible here is therefore a pure timing
+    difference, which is why the figure carries a ratio panel : an exponent
+    alone would not say whether the gap widens or closes with the mesh.
+
+    Top    : cost of one factorization against mesh size, log-log, with the
+             fitted exponent of each curve.
+    Bottom : up-looking / multifrontal, per ordering, on the sizes both
+             reached. Above 1 means the multifrontal one is the faster.
+    """
+    cholesky = [r for r in runs if r["solver"] == "cholesky"]
+    keys = sorted({variant(r) for r in cholesky})
+    facts = {k[1] for k in keys}
+    if len(facts) < 2:
+        only = sorted(facts)[0] if facts else "none"
+        print(f"figure 6 skipped : only the {only} factorization in the "
+              f"reports")
+        return
+
+    series = {}
+    for key in keys:
+        rows = phase_rows(runs, key)
+        pts = [(r["elements"], phase_cost(r, "factorization")) for r in rows]
+        pts = [(x, y) for x, y in pts if y and y > 0]
+        if len(pts) >= 2:
+            series[key] = pts
+    if len(series) < 2:
+        print("figure 6 skipped : need two variants at two mesh sizes or more")
+        return
+
+    dofs = {r["elements"]: r["dofs"] for r in cholesky}
+    all_x = sorted({x for pts in series.values() for x, _ in pts})
+
+    fig, (ax, rax) = plt.subplots(
+        2, 1, figsize=(9, 7.6), facecolor=SURFACE, sharex=True,
+        gridspec_kw={"height_ratios": [3, 1.35], "hspace": 0.12})
+    style_axes(
+        ax,
+        "Sparse Cholesky : up-looking vs multifrontal factorization",
+        None,
+        "time of one factorization (ms)",
+        f"same factor, same pattern, same fill in : only the algorithm "
+        f"differs   |   {dofs[all_x[0]]} to {dofs[all_x[-1]]} DoF",
+    )
+    style_axes(rax, None,
+               "elements (triangles)   [= 12 n\u00b2 at subdivision n]",
+               "speedup\n(up-looking / multifrontal)")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    rax.set_xscale("log")
+
+    labels = []
+    anchor = None
+    exponents = {}
+    for key in sorted(series):
+        pts = series[key]
+        px = [x for x, _ in pts]
+        py = [y for _, y in pts]
+        p = fit_exponent(px, py)
+        exponents[key] = p
+        color = variant_color(key)
+        if anchor is None or key == ("nested", "up-looking"):
+            anchor = (px[0], py[0])
+        ax.plot(px, py, marker="o", markersize=4, linewidth=1.8, color=color,
+                zorder=3)
+        entry = {"x": px[-1], "y": py[-1], "color": color,
+                 "text": f"{variant_label(key)}  (\u221d E^{p:.2f})" if p
+                         else variant_label(key)}
+        # A curve stopping short of the right edge -- the natural ordering
+        # gives up early -- is labelled leftwards, off the stack at the edge.
+        if px[-1] < all_x[-1]:
+            entry["side"] = "left"
+        labels.append(entry)
+
+    guide_lines(ax, anchor, all_x[-1], ((1.0, "E"), (1.5, "E^1.5")), labels)
+    ax.set_xlim(all_x[0] * 0.8, all_x[-1] * 5.0)
+    declutter(labels, ax)
+
+    # Ratio panel : one curve per ordering that has both factorizations.
+    rax.axhline(1.0, color=MUTED, linestyle="--", linewidth=0.9, zorder=1)
+    ratios = {}
+    printed = []
+    for ordering in sorted({k[0] for k in series}):
+        up = dict(series.get((ordering, "up-looking"), []))
+        mf = dict(series.get((ordering, "multifrontal"), []))
+        common = sorted(set(up) & set(mf))
+        if len(common) < 2:
+            continue
+        rx = common
+        ry = [up[x] / mf[x] for x in common]
+        ratios[ordering] = (rx, ry)
+        color = variant_color((ordering, "multifrontal"))
+        rax.plot(rx, ry, marker="o", markersize=4, linewidth=1.6, color=color,
+                 zorder=3)
+        rax.annotate(f"{ordering}", xy=(rx[-1], ry[-1]), xytext=(7, 0),
+                     textcoords="offset points", fontsize=8.5, color=color,
+                     va="center", zorder=4)
+        printed.append((ordering, rx, ry))
+
+    if not ratios:
+        rax.text(0.5, 0.5, "no ordering run with both factorizations",
+                 transform=rax.transAxes, ha="center", va="center",
+                 fontsize=9, color=MUTED)
+    else:
+        lo = min(min(ry) for _, ry in ratios.values())
+        hi = max(max(ry) for _, ry in ratios.values())
+        rax.set_ylim(min(0.9, lo * 0.9), hi * 1.15)
+
+    savefig("cholesky_factorization_scaling.png")
+
+    print("\n  factorization cost \u221d elements^p :")
+    for key in sorted(exponents):
+        if exponents[key]:
+            print(f"    {variant_label(key):<36} p = {exponents[key]:.2f}")
+    for ordering, rx, ry in printed:
+        print(f"\n  speedup of multifrontal over up-looking ({ordering}) :")
+        for x, y in zip(rx, ry):
+            print(f"    {dofs[x]:>7} DoF : x{y:.2f}")
 
 
 # ---------------------------------------------------------------------------
@@ -727,19 +1027,24 @@ def main():
     steps = sorted({r["steps"] for r in runs})
     tols = sorted({r["tol"] for r in runs if r["tol"]})
     orderings = sorted({r["ordering"] for r in runs if r["ordering"]})
+    facts = sorted({r["factorization"] for r in runs if r["factorization"]})
+    variants = sorted({variant(r) for r in runs if r["solver"] == "cholesky"})
     print(f"  subdivisions : {sizes}")
     print(f"  time steps   : {steps}")
     print(f"  cg tolerances: {tols}")
     print(f"  orderings    : {orderings}")
+    print(f"  factorizations: {facts}")
     print()
 
-    for ordering in orderings:
-        plot_phases(runs, ordering)
+    show_fact = show_factorization(runs)
+    for key in variants:
+        plot_phases(runs, key, show_fact)
         print()
     plot_total_vs_size(runs)
     plot_total_vs_steps(runs)
     plot_fillin(runs)
     plot_cg_iterations(runs)
+    plot_factorization_scaling(runs)
 
 
 if __name__ == "__main__":

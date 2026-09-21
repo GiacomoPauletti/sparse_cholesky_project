@@ -425,7 +425,7 @@ static AnalysisResult analyse_matrix(const std::string &group_name)
         AR.fill.nnz_L_symbolic = nnz_sym;
 
         /* Numeric factorization */
-        SparseCholeskyFactorization factorization(&BR->A);
+        UplookingSparseCholeskyFactorization factorization(&BR->A);
         factorization.setPatternL(patL);
 
         CSRMatrix *factor = nullptr;
